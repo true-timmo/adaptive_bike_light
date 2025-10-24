@@ -26,7 +26,7 @@ class MotionSensor
         MotionSensor(int32_t id=-1) : g_accel(id) {}
 
         void init(int sdaPin, int sclPin) {
-            Wire.begin(sdaPin, sclPin);
+            Wire.setPins(sdaPin, sclPin);
             if (!g_accel.begin()) {
                 Serial.println("ADXL345 nicht gefunden! Verdrahtung prüfen.");
                 while (true) delay(1000);

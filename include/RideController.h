@@ -60,17 +60,14 @@ class RideController {
         };
 
     public:
-        RideController(MotionSensor *sensor, Servo *servo) {
-            sensor = sensor;
-            servo = servo;
-        };
+        RideController(MotionSensor* s, Servo* v) : sensor(s), servo(v) {}
 
-        void init(float rollDegOffset) {
-            rollDegOffset = rollDegFiltered;
+        void init(float offset) {
+            rollDegOffset = offset;
             servo->setPeriodHertz(50);
             servo->attach(SERVO::PIN, SERVO::PWM_MIN, SERVO::PWM_MAX);
             servo->write(SERVO::NEUTRAL_DEG);
-        };
+        }
 
         void setTiming() {
             currentTimestamp = millis();
@@ -82,9 +79,9 @@ class RideController {
         }
 
         static inline float computeRollDegFromAccel(Accel accel) {
-            if (!isfinite(accel.x) || !isfinite(accel.z)) return NAN;
+            if (!isfinite(accel.x) || !isfinite(accel.y)) return NAN;
 
-            float rollRad = atan2f(accel.x, accel.z);
+            float rollRad = atan2f(accel.x, accel.y);
             float rollDeg = rollRad * 180.0f / PI;
             return ROLL_SIGN * rollDeg;
         };
@@ -158,11 +155,11 @@ class RideController {
 
                 // langsames, driftfreies Nachzentrieren (optional)
                 if (AUTO_RECENTER_ENABLE) {
-                float rec = AUTO_RECENTER_RATE_DPS * lastToCurrent;
-                float err = rollDeg;
-                if (fabsf(err) > 0.1f) {
-                    rollDegOffset += (err > 0 ? +rec : -rec);
-                }
+                    float rec = AUTO_RECENTER_RATE_DPS * lastToCurrent;
+                    float err = rollDeg;
+                    if (fabsf(err) > 0.1f) {
+                        rollDegOffset += (err > 0 ? +rec : -rec);
+                    }
                 }
 
             } else {

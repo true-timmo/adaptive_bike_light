@@ -21,6 +21,14 @@ class CalibrationStorage {
             return c;
         };
 
+        uint16_t crcCalib(const CalibBlob& b) {
+            uint16_t c = 0;
+            c = crc16_acc((const uint8_t*)&b.magic,   sizeof b.magic);
+            c = crc16_acc((const uint8_t*)&b.version, sizeof b.version) + c;
+            c = crc16_acc((const uint8_t*)&b.rollDegOffset, sizeof b.rollDegOffset) + c;
+            return c;
+        }
+
     public:
         CalibrationStorage() = default;
 
@@ -37,10 +45,8 @@ class CalibrationStorage {
 
             bool ok = (blob.magic == 0xC0FFEE21) && (blob.version == 1);
             if (ok) {
-                // CRC über alles bis vor crc
-                uint16_t expect = crc16_acc(reinterpret_cast<const uint8_t*>(&blob),
-                                            sizeof(CalibBlob)-sizeof(blob.crc));
-                ok = (expect == blob.crc);
+                uint16_t expectedCrc = crcCalib(blob);
+                ok = (expectedCrc == blob.crc);
             }
 
             if (ok) {
@@ -55,8 +61,7 @@ class CalibrationStorage {
         bool saveCalibration(float offsetDeg) {
             CalibBlob blob{};
             blob.rollDegOffset = offsetDeg;
-            blob.crc = crc16_acc(reinterpret_cast<const uint8_t*>(&blob),
-                                sizeof(CalibBlob)-sizeof(blob.crc));
+            blob.crc = crcCalib(blob);
             EEPROM.put(EEPROM_ADDR, blob);
             if (!EEPROM.commit()) {
                 Serial.println("EEPROM: commit FAILED");
