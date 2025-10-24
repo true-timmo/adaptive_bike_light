@@ -31,7 +31,6 @@ class RideController {
         static constexpr uint32_t CALIB_TIME_MS = 2000;
         static constexpr bool AUTO_RECENTER_ENABLE = true;
         static constexpr float AUTO_RECENTER_RATE_DPS = 0.05f;
-        static constexpr float ROLL_SIGN = -1.0f;
 
         static constexpr float LEAN_ENTER_DEG = 4.0f;   // ab diesem gefilterten Rollwinkel: "Kurve"
         static constexpr float LEAN_EXIT_DEG  = 2.0f;   // darunter zurück zu "Gerade"
@@ -55,9 +54,13 @@ class RideController {
         uint32_t currentTimestamp = 0;
         uint32_t stateTimerStart  = 0;
 
-        static inline float clampf(float v, float lo, float hi) {
+        static inline float clampf(float v, float lo = SERVO::MIN_DEG, float hi = SERVO::MAX_DEG) {
             return v < lo ? lo : (v > hi ? hi : v);
         };
+
+        float neutralAngle() const {
+            return SERVO::NEUTRAL_DEG; // + SERVO::GAIN * (-rollDegOffset);
+        }   
 
     public:
         RideController(MotionSensor* s, Servo* v) : sensor(s), servo(v) {}
@@ -78,42 +81,32 @@ class RideController {
             lastTimestamp = currentTimestamp;
         }
 
-        static inline float computeRollDegFromAccel(Accel accel) {
-            if (!isfinite(accel.x) || !isfinite(accel.y)) return NAN;
-
-            float rollRad = atan2f(accel.x, accel.y);
-            float rollDeg = rollRad * 180.0f / PI;
-            return ROLL_SIGN * rollDeg;
-        };
-
         float runCalibration(uint32_t duration_ms = 2000) {
-            servo->write(SERVO::NEUTRAL_DEG);
-
             Serial.println("Kalibriere... bitte Fahrrad/Mechanik aufrecht halten.");
             uint32_t t0 = millis();
             uint32_t n  = 0;
             double sum = 0.0;
 
-            Accel accel = Accel();
             while (millis() - t0 < duration_ms) {
-                if (sensor->readAccel(&accel)) {
-                    float roll = computeRollDegFromAccel(accel);
-                    if (isfinite(roll)) { sum += roll; n++; }
-                }
+                float roll = sensor->readTiltAngle();
+                if (isfinite(roll)) { sum += roll; n++; }
                 delay(5);
             }
             rollDegOffset = (n > 0) ? (float)(sum / (double)n) : 0.0f;
             Serial.printf("Kalibrierung fertig. Neuer Offset = %.2f°\n", rollDegOffset);
+            servo->write(SERVO::NEUTRAL_DEG);
+
             return rollDegOffset;
         };
 
         void turnNeutral() {
             float step = SERVO::MAX_SPEED_DPS * lastToCurrent;
-            float target = SERVO::NEUTRAL_DEG;
+            float target = neutralAngle();
             float delta = clampf(target - currentServoAngle, -step, +step);
-            currentServoAngle = clampf(currentServoAngle + delta, SERVO::MIN_DEG, SERVO::MAX_DEG);
+            currentServoAngle = clampf(currentServoAngle + delta);
+
             servo->write(currentServoAngle);
-        };
+        }
 
         void handleCurve(float rollDeg) {
             rollDeg -= rollDegOffset;
@@ -151,7 +144,7 @@ class RideController {
             // // === Ziel-Servowinkel bestimmen ===
             float targetDeg;
             if (state == RideState::STRAIGHT) {
-                targetDeg = SERVO::NEUTRAL_DEG;
+                targetDeg = neutralAngle();
 
                 // langsames, driftfreies Nachzentrieren (optional)
                 if (AUTO_RECENTER_ENABLE) {
@@ -164,18 +157,18 @@ class RideController {
 
             } else {
                 // Kurvenfahrt aktiv: Servo proportional zum gefilterten Neigewinkel
-                float cmd = SERVO::NEUTRAL_DEG + SERVO::GAIN * rollDegFiltered;
+                float cmd = neutralAngle() + SERVO::GAIN * rollDegFiltered;
 
                 if (fabsf(cmd - SERVO::NEUTRAL_DEG) < OUTPUT_DEADBAND_DEG) {
                 cmd = SERVO::NEUTRAL_DEG;
                 }
-                targetDeg = clampf(cmd, SERVO::MIN_DEG, SERVO::MAX_DEG);
+                targetDeg = clampf(cmd);
             }
 
             // === Slew-Rate-Limiter ===
             float maxStep = SERVO::MAX_SPEED_DPS * lastToCurrent;
             float delta   = clampf(targetDeg - currentServoAngle, -maxStep, +maxStep);
-            currentServoAngle = clampf(currentServoAngle + delta, SERVO::MIN_DEG, SERVO::MAX_DEG);
+            currentServoAngle = clampf(currentServoAngle + delta);
 
             servo->write(currentServoAngle);
         };

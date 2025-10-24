@@ -4,6 +4,7 @@
 #include "MotionSensor.h"
 #include "CalibrationStorage.h"
 #include "Button.h"
+#include "MotionLogger.h"
 
 #define I2C_SDA 8
 #define I2C_SCL 20
@@ -14,6 +15,7 @@ MotionSensor sensor = MotionSensor(12345);
 CalibrationStorage eeprom = CalibrationStorage();
 Button button = Button(BUTTON_PIN, LOW);
 RideController ride = RideController(&sensor, &g_servo);
+MotionLogger logger = MotionLogger();
 
 static void shutdownPeripherals() {
   g_servo.detach();
@@ -44,7 +46,7 @@ void handleSleepOnShortPress(ButtonEvent ev) {
 void handleCalibrationOnLongPress(ButtonEvent ev) {
   if (ev != BUTTON_LONG) return;
 
-  static float newOffset = ride.runCalibration(2000);
+  float newOffset = ride.runCalibration(2000);
 
   eeprom.saveCalibration(newOffset);
   Serial.println("Kalibrierung übernommen und gespeichert.");
@@ -55,6 +57,7 @@ void setup() {
   eeprom.begin(64);
   delay(100);
   
+  logger.begin();
   sensor.init(I2C_SDA, I2C_SCL);
   CalibBlob calib = eeprom.loadCalibration();
 
@@ -63,21 +66,22 @@ void setup() {
 }
 
 void loop() {
+  logger.handleSerialMenu();
+
   ButtonEvent ev = button.checkEvent();
   handleCalibrationOnLongPress(ev);
   handleSleepOnShortPress(ev);
 
   ride.setTiming();
 
-  static Accel accel = Accel();
-  if (!sensor.readAccel(&accel)) {
+  float rollDeg = sensor.readTiltAngle();
+  if (!isfinite(rollDeg)) {
     ride.turnNeutral();
     return;
   }
 
-  // Roh-Rollwinkel (Grad)
-  float rollDeg = ride.computeRollDegFromAccel(accel);
-  if (!isfinite(rollDeg)) return;
+  //logger.logMotion(rollDeg);
+  //delay(20);
 
   ride.handleCurve(rollDeg);
 }
