@@ -14,7 +14,7 @@
  * Vorzeichen bestimmt, ob „in die Kurve“ gelenkt wird.
  */
 struct SERVO {
-  static constexpr int PIN             = 21;
+  static constexpr int PIN             = 10;
   static constexpr int PWM_MIN         = 1000;
   static constexpr int PWM_MAX         = 2000;
   static constexpr float MAX_SPEED_DPS = 360.0f;
@@ -46,6 +46,7 @@ class RideController {
         RideState state = RideState::STRAIGHT;
 
         float rollDegOffset       = 0.0f;
+        float yawBias             = 0.0f;
         float rollDegFiltered     = 0.0f; // gefilterter Rollwinkel nach Offset
         float currentServoAngle   = SERVO::NEUTRAL_DEG;
 
@@ -65,8 +66,10 @@ class RideController {
     public:
         RideController(MotionSensor* s, Servo* v) : sensor(s), servo(v) {}
 
-        void init(float offset) {
-            rollDegOffset = offset;
+        void init(MotionData calibrationData) {
+            rollDegOffset = calibrationData.roll;
+            yawBias = calibrationData.yaw;
+            
             servo->setPeriodHertz(50);
             servo->attach(SERVO::PIN, SERVO::PWM_MIN, SERVO::PWM_MAX);
             servo->write(SERVO::NEUTRAL_DEG);
@@ -81,22 +84,17 @@ class RideController {
             lastTimestamp = currentTimestamp;
         }
 
-        float runCalibration(uint32_t duration_ms = 2000) {
+        MotionData runCalibration(uint32_t duration_ms = 2000) {
             Serial.println("Kalibriere... bitte Fahrrad/Mechanik aufrecht halten.");
-            uint32_t t0 = millis();
-            uint32_t n  = 0;
-            double sum = 0.0;
+            rollDegOffset = sensor->calibrateRollAngle();
+            Serial.println(F("Kalibriere Gyro-Bias... Bitte nicht bewegen."));
+            yawBias = sensor->calibrateGyroBias();
 
-            while (millis() - t0 < duration_ms) {
-                float roll = sensor->readTiltAngle();
-                if (isfinite(roll)) { sum += roll; n++; }
-                delay(5);
-            }
-            rollDegOffset = (n > 0) ? (float)(sum / (double)n) : 0.0f;
             Serial.printf("Kalibrierung fertig. Neuer Offset = %.2f°\n", rollDegOffset);
+            Serial.printf("Gyro-Z-Bias: %.3f °/s\n", yawBias);
             servo->write(SERVO::NEUTRAL_DEG);
 
-            return rollDegOffset;
+            return MotionData(rollDegOffset, yawBias);
         };
 
         void turnNeutral() {
@@ -108,68 +106,67 @@ class RideController {
             servo->write(currentServoAngle);
         }
 
-        void handleCurve(float rollDeg) {
-            rollDeg -= rollDegOffset;
+        void handleCurve(MotionData motionData) {
+            float rollDeg = motionData.roll - rollDegOffset;
+            float yawRate = motionData.yaw;
 
-            // 1) Low-Pass-Filter
-            float alpha = lastToCurrent / (LPF_TAU_S + lastToCurrent);
+            // --- Adaptive Filterung: glättet Roll bei niedriger Yaw-Rate stärker ---
+            float dynamicTau = LPF_TAU_S * (1.0f + 0.5f * (1.0f - min(fabsf(yawRate) / 60.0f, 1.0f)));
+            float alpha = lastToCurrent / (dynamicTau + lastToCurrent);
             rollDegFiltered += alpha * (rollDeg - rollDegFiltered);
 
-            // === Zustandserkennung mit Hysterese + Haltezeit ===
+            // --- Zustandserkennung (Hysterese) ---
             float absLean = fabsf(rollDegFiltered);
             switch (state) {
                 case RideState::STRAIGHT:
-                if (absLean >= LEAN_ENTER_DEG) {
-                    if (currentTimestamp - stateTimerStart >= ENTER_HOLD_MS) {
-                    state = RideState::CURVE;
-                    stateTimerStart = currentTimestamp;
+                    if (absLean >= LEAN_ENTER_DEG || fabsf(yawRate) >= 20.0f) {
+                        if (currentTimestamp - stateTimerStart >= ENTER_HOLD_MS) {
+                            state = RideState::CURVE;
+                            stateTimerStart = currentTimestamp;
+                        }
+                    } else {
+                        stateTimerStart = currentTimestamp;
                     }
-                } else {
-                    stateTimerStart = currentTimestamp;
-                }
-                break;
+                    break;
 
                 case RideState::CURVE:
-                if (absLean <= LEAN_EXIT_DEG) {
-                    if (currentTimestamp - stateTimerStart >= EXIT_HOLD_MS) {
-                    state = RideState::STRAIGHT;
-                    stateTimerStart = currentTimestamp;
+                    if ((absLean <= LEAN_EXIT_DEG && fabsf(yawRate) < 10.0f)) {
+                        if (currentTimestamp - stateTimerStart >= EXIT_HOLD_MS) {
+                            state = RideState::STRAIGHT;
+                            stateTimerStart = currentTimestamp;
+                        }
+                    } else {
+                        stateTimerStart = currentTimestamp;
                     }
-                } else {
-                    stateTimerStart = currentTimestamp;
-                }
-                break;
+                    break;
             }
 
-            // // === Ziel-Servowinkel bestimmen ===
+            // --- Zielwinkel berechnen ---
             float targetDeg;
             if (state == RideState::STRAIGHT) {
                 targetDeg = neutralAngle();
 
-                // langsames, driftfreies Nachzentrieren (optional)
                 if (AUTO_RECENTER_ENABLE) {
                     float rec = AUTO_RECENTER_RATE_DPS * lastToCurrent;
                     float err = rollDeg;
-                    if (fabsf(err) > 0.1f) {
-                        rollDegOffset += (err > 0 ? +rec : -rec);
-                    }
+                    if (fabsf(err) > 0.1f) rollDegOffset += (err > 0 ? +rec : -rec);
                 }
-
             } else {
-                // Kurvenfahrt aktiv: Servo proportional zum gefilterten Neigewinkel
-                float cmd = neutralAngle() + SERVO::GAIN * rollDegFiltered;
+                // Kombination aus Rollwinkel (langsam) + Yawrate (schnell)
+                float blended = rollDegFiltered + 0.05f * yawRate; 
+                float cmd = neutralAngle() + SERVO::GAIN * blended;
 
-                if (fabsf(cmd - SERVO::NEUTRAL_DEG) < OUTPUT_DEADBAND_DEG) {
-                cmd = SERVO::NEUTRAL_DEG;
-                }
+                if (fabsf(cmd - SERVO::NEUTRAL_DEG) < OUTPUT_DEADBAND_DEG)
+                    cmd = SERVO::NEUTRAL_DEG;
+
                 targetDeg = clampf(cmd);
             }
 
-            // === Slew-Rate-Limiter ===
+            // --- Slew-Rate-Limiter ---
             float maxStep = SERVO::MAX_SPEED_DPS * lastToCurrent;
             float delta   = clampf(targetDeg - currentServoAngle, -maxStep, +maxStep);
             currentServoAngle = clampf(currentServoAngle + delta);
 
             servo->write(currentServoAngle);
-        };
+        }
 };

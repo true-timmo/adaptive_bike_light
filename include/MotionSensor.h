@@ -3,7 +3,7 @@
 
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
-#include <Adafruit_ADXL345_U.h>
+#include <Adafruit_MPU6050.h>
 #include <math.h>
 #include <EEPROM.h>
 
@@ -14,54 +14,104 @@ struct Accel {
     bool valid = false;
 
     Accel() {}
-    Accel(float x_, float y_, float z_) : x(x_), y(y_), z(z_) {valid = true;}
+    Accel(float x_, float y_, float z_) : x(x_), y(y_), z(z_) { valid = true; }
 };
 
-class MotionSensor
-{
-    private:
-        static constexpr range_t ACC_RANGE = ADXL345_RANGE_4_G;
-        static constexpr float ROLL_SIGN = -1.0f;
+struct MotionData {
+    float roll = 0.0f;
+    float yaw = 0.0f;
+    bool valid = false;
 
-        Adafruit_ADXL345_Unified g_accel;
+    MotionData() {}
+    MotionData(float roll_, float yaw_) : roll(roll_), yaw(yaw_) { valid = true; }
+};
 
-    public:
-        MotionSensor(int32_t id=-1) : g_accel(id) {}
+class MotionSensor {
+  private:
+    static constexpr float ROLL_SIGN = 1.0f;
+    float roll = 0.0f;
+    unsigned long tPrev = 0;
+    float yawBias = 0.0f;
+    Adafruit_MPU6050 g_sensor;
 
-        void init(int sdaPin, int sclPin) {
-            Wire.setPins(sdaPin, sclPin);
-            if (!g_accel.begin()) {
-                Serial.println("ADXL345 nicht gefunden! Verdrahtung prüfen.");
-                while (true) delay(1000);
-            }
-            g_accel.setRange(ACC_RANGE);
-        };
+  public:
+    MotionSensor(int32_t id = -1) : g_sensor() {}
 
-        Accel readAccel() {
-            sensors_event_t event;
-            g_accel.getEvent(&event);
-
-            if (!isfinite(event.acceleration.x)
-                || !isfinite(event.acceleration.y)
-                || !isfinite(event.acceleration.z)
-            ) { return Accel(); }
-
-            return Accel(event.acceleration.x, event.acceleration.y, event.acceleration.z);
-        };
-
-        float readTiltAngle() {
-            sensors_event_t event;
-            g_accel.getEvent(&event);
-
-            if (!isfinite(event.acceleration.x)
-                || !isfinite(event.acceleration.y)
-                || !isfinite(event.acceleration.z)
-            ) { return NAN; }
-
-            float rollRad = atan2f(event.acceleration.x, event.acceleration.z);
-            float rollDeg = rollRad * 180.0f / PI;
-
-            return ROLL_SIGN * rollDeg;
+    void init(int sdaPin, int sclPin) {
+        Wire.setPins(sdaPin, sclPin);
+        if (!g_sensor.begin()) {
+            Serial.println("MPU6050 nicht gefunden! Verdrahtung prüfen.");
+            while (true) delay(1000);
         }
+        g_sensor.setAccelerometerRange(MPU6050_RANGE_4_G);
+        g_sensor.setGyroRange(MPU6050_RANGE_500_DEG);
+        g_sensor.setFilterBandwidth(MPU6050_BAND_44_HZ);
+    }
+
+    float calibrateGyroBias(uint16_t samples = 200, uint16_t delayMs = 5) {
+        float sum = 0.0f;
+
+        for (uint16_t i = 0; i < samples; i++) {
+            sensors_event_t a, g, t;
+            g_sensor.getEvent(&a, &g, &t);
+            sum += g.gyro.z * 180.0f / M_PI;
+            delay(delayMs);
+        }
+        yawBias = sum / samples;
+
+        return yawBias;
+    }
+
+    float calibrateRollAngle(uint32_t duration_ms = 2000) {
+        uint32_t t0 = millis();
+        uint32_t n  = 0;
+        double sum = 0.0;
+
+        while (millis() - t0 < duration_ms) {
+            MotionData data = readMotionData();
+            if (data.valid) { sum += data.roll; n++; }
+            delay(5);
+        }
+
+        return (n > 0) ? (float)(sum / (double)n) : 0.0f;
+    };
+
+    Accel readAccel() {
+        sensors_event_t a, g, t;
+        g_sensor.getEvent(&a, &g, &t);
+
+        if (!isfinite(a.acceleration.x) ||
+            !isfinite(a.acceleration.y) ||
+            !isfinite(a.acceleration.z)) {
+            return Accel();
+        }
+
+        return Accel(a.acceleration.x, a.acceleration.y, a.acceleration.z);
+    }
+
+    MotionData readMotionData() {
+        sensors_event_t a, g, t;
+        g_sensor.getEvent(&a, &g, &t);
+
+        float ax = a.acceleration.x;
+        float ay = a.acceleration.y;
+        float az = a.acceleration.z;
+        float gyroX = g.gyro.x * 180.0f / M_PI;
+        float gyroZ = g.gyro.z * 180.0f / M_PI - yawBias;
+
+        if (!isfinite(ax) || !isfinite(ay) || !isfinite(az) || !isfinite(gyroX) || !isfinite(gyroZ))
+            return MotionData();
+
+        unsigned long now = micros();
+        float dt = (tPrev == 0) ? 0.01f : (now - tPrev) / 1e6f;
+        tPrev = now;
+
+        float rollAcc = atan2f(ROLL_SIGN * ay, az) * 180.0f / M_PI;
+
+        const float alpha = 0.98f;
+        roll = alpha * (roll + gyroX * dt) + (1.0f - alpha) * rollAcc;
+
+        return MotionData(roll, gyroZ);
+    }
 };
-#endif //MotionSensor_h
+#endif // MotionSensor_h

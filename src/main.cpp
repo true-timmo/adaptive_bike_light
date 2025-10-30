@@ -46,9 +46,9 @@ void handleSleepOnShortPress(ButtonEvent ev) {
 void handleCalibrationOnLongPress(ButtonEvent ev) {
   if (ev != BUTTON_LONG) return;
 
-  float newOffset = ride.runCalibration(2000);
+  MotionData calibrationData = ride.runCalibration(2000);
 
-  eeprom.saveCalibration(newOffset);
+  eeprom.saveCalibration(calibrationData.roll, calibrationData.yaw);
   Serial.println("Kalibrierung übernommen und gespeichert.");
 }
 
@@ -59,9 +59,11 @@ void setup() {
   
   logger.begin();
   sensor.init(I2C_SDA, I2C_SCL);
-  CalibBlob calib = eeprom.loadCalibration();
+  //CalibBlob calib = eeprom.loadCalibration();
 
-  ride.init(calib.rollDegOffset);
+  MotionData calibrationData = ride.runCalibration(2000);
+  ride.init(calibrationData);
+
   Serial.println("Starte Kurvenlicht-Regelung...");
 }
 
@@ -74,14 +76,12 @@ void loop() {
 
   ride.setTiming();
 
-  float rollDeg = sensor.readTiltAngle();
-  if (!isfinite(rollDeg)) {
+  MotionData motionData = sensor.readMotionData();
+  if (!motionData.valid) {
     ride.turnNeutral();
     return;
   }
 
   //logger.logMotion(rollDeg);
-  //delay(20);
-
-  ride.handleCurve(rollDeg);
+  ride.handleCurve(motionData);
 }

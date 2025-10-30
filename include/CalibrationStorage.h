@@ -6,6 +6,7 @@ struct CalibBlob {
     uint32_t magic = 0xC0FFEE21;
     uint16_t version = 1;
     float rollDegOffset = 0.0f;
+    float yawBias = 0.0f; 
     uint16_t crc = 0;
 };
 
@@ -26,6 +27,7 @@ class CalibrationStorage {
             c = crc16_acc((const uint8_t*)&b.magic,   sizeof b.magic);
             c = crc16_acc((const uint8_t*)&b.version, sizeof b.version) + c;
             c = crc16_acc((const uint8_t*)&b.rollDegOffset, sizeof b.rollDegOffset) + c;
+            c = crc16_acc((const uint8_t*)&b.yawBias, sizeof b.yawBias) + c;
             return c;
         }
 
@@ -58,9 +60,10 @@ class CalibrationStorage {
             return blob;
         };
 
-        bool saveCalibration(float offsetDeg) {
+        bool saveCalibration(float offsetDeg, float yawBias) {
             CalibBlob blob{};
             blob.rollDegOffset = offsetDeg;
+            blob.yawBias = yawBias;
             blob.crc = crcCalib(blob);
             EEPROM.put(EEPROM_ADDR, blob);
             if (!EEPROM.commit()) {
