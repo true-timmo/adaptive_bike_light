@@ -167,6 +167,9 @@ class RideController {
             float delta   = clampf(targetDeg - currentServoAngle, -maxStep, +maxStep);
             currentServoAngle = clampf(currentServoAngle + delta);
 
-            servo->write(currentServoAngle);
+            if (fabsf(targetDeg - currentServoAngle) > 0.3f) {
+                currentServoAngle = targetDeg;
+                servo->write(currentServoAngle);
+            }
         }
 };
