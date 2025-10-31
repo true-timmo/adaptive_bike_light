@@ -32,6 +32,11 @@ class RideController {
         static constexpr bool AUTO_RECENTER_ENABLE = true;
         static constexpr float AUTO_RECENTER_RATE_DPS = 0.05f;
 
+        // Gyro-Assist Einstellungen
+        static constexpr float YAW_NORM   = 80.0f;   // °/s für volle Yaw-Gewichtung
+        static constexpr float ROLL_NORM  = 10.0f;   // °  für „Roll ist schon groß“
+        static constexpr float K_YAW      = 0.06f;   // Basiseinfluss der Yaw-Rate (Feintuning)
+
         static constexpr float LEAN_ENTER_DEG = 4.0f;   // ab diesem gefilterten Rollwinkel: "Kurve"
         static constexpr float LEAN_EXIT_DEG  = 2.0f;   // darunter zurück zu "Gerade"
         static constexpr uint32_t ENTER_HOLD_MS = 180;  // Mindestdauer für Eintritt
@@ -107,41 +112,46 @@ class RideController {
         }
 
         void handleCurve(MotionData motionData) {
-            float rollDeg = motionData.roll - rollDegOffset;
-            float yawRate = motionData.yaw;
+            float rollDeg = motionData.roll - rollDegOffset;  // kalibrierter Roll
+            float yawRate = motionData.yaw;                   // °/s (Bias bereits im Sensor korrigiert)
 
-            // --- Adaptive Filterung: glättet Roll bei niedriger Yaw-Rate stärker ---
-            float dynamicTau = LPF_TAU_S * (1.0f + 0.5f * (1.0f - min(fabsf(yawRate) / 60.0f, 1.0f)));
-            float alpha = lastToCurrent / (dynamicTau + lastToCurrent);
+            // --- 1) Adaptive Glättung: je kleiner Yaw, desto stärkeres LPF (Gerade ruhiger) ---
+            float yawMag   = fabsf(yawRate);
+            float yawFrac  = fminf(yawMag / YAW_NORM, 1.0f);                   // 0..1
+            float dynTau   = LPF_TAU_S * (1.0f + 0.6f * (1.0f - yawFrac));     // 0.25..0.4 s
+            float alpha    = lastToCurrent / (dynTau + lastToCurrent);
             rollDegFiltered += alpha * (rollDeg - rollDegFiltered);
 
-            // --- Zustandserkennung (Hysterese) ---
+            // --- 2) Zustandserkennung (Hysterese) – Eintritt erleichtern, wenn Yaw groß ---
             float absLean = fabsf(rollDegFiltered);
-            switch (state) {
-                case RideState::STRAIGHT:
-                    if (absLean >= LEAN_ENTER_DEG || fabsf(yawRate) >= 20.0f) {
-                        if (currentTimestamp - stateTimerStart >= ENTER_HOLD_MS) {
-                            state = RideState::CURVE;
-                            stateTimerStart = currentTimestamp;
-                        }
-                    } else {
-                        stateTimerStart = currentTimestamp;
-                    }
-                    break;
+            float leanEnterDyn = LEAN_ENTER_DEG - 1.5f * yawFrac;              // bis ~1.5° leichter
+            if (leanEnterDyn < 1.0f) leanEnterDyn = 1.0f;
 
-                case RideState::CURVE:
-                    if ((absLean <= LEAN_EXIT_DEG && fabsf(yawRate) < 10.0f)) {
-                        if (currentTimestamp - stateTimerStart >= EXIT_HOLD_MS) {
-                            state = RideState::STRAIGHT;
-                            stateTimerStart = currentTimestamp;
-                        }
-                    } else {
+            switch (state) {
+            case RideState::STRAIGHT:
+                if (absLean >= leanEnterDyn || yawMag >= 20.0f) {
+                    if (currentTimestamp - stateTimerStart >= ENTER_HOLD_MS) {
+                        state = RideState::CURVE;
                         stateTimerStart = currentTimestamp;
                     }
-                    break;
+                } else {
+                    stateTimerStart = currentTimestamp;
+                }
+                break;
+
+            case RideState::CURVE:
+                if ((absLean <= LEAN_EXIT_DEG && yawMag < 10.0f)) {
+                    if (currentTimestamp - stateTimerStart >= EXIT_HOLD_MS) {
+                        state = RideState::STRAIGHT;
+                        stateTimerStart = currentTimestamp;
+                    }
+                } else {
+                    stateTimerStart = currentTimestamp;
+                }
+                break;
             }
 
-            // --- Zielwinkel berechnen ---
+            // --- 3) Zielwinkel: Roll dominiert bei großer Schräglage, Yaw hilft v. a. bei kleinem Roll ---
             float targetDeg;
             if (state == RideState::STRAIGHT) {
                 targetDeg = neutralAngle();
@@ -152,23 +162,25 @@ class RideController {
                     if (fabsf(err) > 0.1f) rollDegOffset += (err > 0 ? +rec : -rec);
                 }
             } else {
-                // Kombination aus Rollwinkel (langsam) + Yawrate (schnell)
-                float blended = rollDegFiltered + 0.05f * yawRate; 
-                float cmd = neutralAngle() + SERVO::GAIN * blended;
+                // Yaw-Gewichtung wird klein, wenn Roll schon groß ist:
+                float rollFrac = fminf(fabsf(rollDegFiltered) / ROLL_NORM, 1.0f); // 0..1
+                float yawWeight = (1.0f - rollFrac) * yawFrac;                    // groß: kleiner Roll + große Yaw
+                float blended = rollDegFiltered + (K_YAW * yawWeight) * yawRate;
 
+                float cmd = neutralAngle() + SERVO::GAIN * blended;
                 if (fabsf(cmd - SERVO::NEUTRAL_DEG) < OUTPUT_DEADBAND_DEG)
                     cmd = SERVO::NEUTRAL_DEG;
 
                 targetDeg = clampf(cmd);
             }
 
-            // --- Slew-Rate-Limiter ---
+            // --- 4) Slew-Rate-Limiter + optional „nur schreiben, wenn’s sich lohnt“ ---
             float maxStep = SERVO::MAX_SPEED_DPS * lastToCurrent;
             float delta   = clampf(targetDeg - currentServoAngle, -maxStep, +maxStep);
-            currentServoAngle = clampf(currentServoAngle + delta);
+            float next    = clampf(currentServoAngle + delta);
 
-            if (fabsf(targetDeg - currentServoAngle) > 0.3f) {
-                currentServoAngle = targetDeg;
+            if (fabsf(next - currentServoAngle) > 0.2f) { // vermeidet Sirren
+                currentServoAngle = next;
                 servo->write(currentServoAngle);
             }
         }
