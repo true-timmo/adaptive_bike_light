@@ -20,10 +20,12 @@ struct Accel {
 struct MotionData {
     float roll = 0.0f;
     float yaw = 0.0f;
+    Accel accel = Accel();
     bool valid = false;
 
     MotionData() {}
     MotionData(float roll_, float yaw_) : roll(roll_), yaw(yaw_) { valid = true; }
+    MotionData(float roll_, float yaw_, Accel accel_) : roll(roll_), yaw(yaw_), accel(accel_) { valid = true; }
 };
 
 class MotionSensor {
@@ -111,7 +113,7 @@ class MotionSensor {
         const float alpha = 0.98f;
         roll = alpha * (roll + gyroX * dt) + (1.0f - alpha) * rollAcc;
 
-        return MotionData(roll, gyroZ);
+        return MotionData(roll, gyroZ, Accel(ax, ay, az));
     }
 };
 #endif // MotionSensor_h

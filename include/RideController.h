@@ -14,37 +14,42 @@
  * Vorzeichen bestimmt, ob „in die Kurve“ gelenkt wird.
  */
 struct SERVO {
-  static constexpr int PIN             = 10;
-  static constexpr int PWM_MIN         = 1000;
-  static constexpr int PWM_MAX         = 2000;
-  static constexpr float MAX_SPEED_DPS = 360.0f;
-  static constexpr float NEUTRAL_DEG   = 90.0f;
-  static constexpr float GEAR_OFFSET   = -7.0f;
-  static constexpr float MIN_DEG       = 30.0f;
-  static constexpr float MAX_DEG       = 150.0f;
-  static constexpr float GAIN          = -5.5f;
+  static constexpr int PIN                  = 10;
+  static constexpr int PWM_MIN              = 1000;
+  static constexpr int PWM_MAX              = 2000;
+  static constexpr float MAX_SPEED_DPS      = 360.0f;
+  static constexpr float NEUTRAL_DEG        = 90.0f;
+  static constexpr float GEAR_OFFSET        = -7.0f;
+  static constexpr float MIN_DEG            = 30.0f;
+  static constexpr float MAX_DEG            = 150.0f;
+  static constexpr float GAIN               = -5.5f;
+  static constexpr float WRITE_DEADBAND_DEG = 0.2f;
 };
 
 enum class RideState { STRAIGHT, CURVE };
 
 class RideController {
     private:
-        static constexpr uint32_t CALIB_TIME_MS = 2000;
-        static constexpr bool AUTO_RECENTER_ENABLE = true;
+        static constexpr uint32_t CALIB_TIME_MS       = 2000;
+        static constexpr bool AUTO_RECENTER_ENABLE    = true;
         static constexpr float AUTO_RECENTER_RATE_DPS = 0.05f;
+
+        static constexpr float    G_MPS2          = 9.80665f; // m/s^2
+        static constexpr float    SHOCK_THR_Z     = 3.0f;
+        static constexpr uint32_t SHOCK_HOLD_MS   = 100;
 
         // Gyro-Assist Einstellungen
         static constexpr float YAW_NORM   = 80.0f;   // °/s für volle Yaw-Gewichtung
         static constexpr float ROLL_NORM  = 10.0f;   // °  für „Roll ist schon groß“
         static constexpr float K_YAW      = 0.06f;   // Basiseinfluss der Yaw-Rate (Feintuning)
 
-        static constexpr float LEAN_ENTER_DEG = 4.0f;   // ab diesem gefilterten Rollwinkel: "Kurve"
-        static constexpr float LEAN_EXIT_DEG  = 2.0f;   // darunter zurück zu "Gerade"
-        static constexpr uint32_t ENTER_HOLD_MS = 180;  // Mindestdauer für Eintritt
-        static constexpr uint32_t EXIT_HOLD_MS  = 400;  // Mindestdauer für Austritt
+        static constexpr float LEAN_ENTER_DEG   = 4.0f;  // ab diesem gefilterten Rollwinkel: "Kurve"
+        static constexpr float LEAN_EXIT_DEG    = 2.0f;  // darunter zurück zu "Gerade"
+        static constexpr uint32_t ENTER_HOLD_MS = 180;   // Mindestdauer für Eintritt
+        static constexpr uint32_t EXIT_HOLD_MS  = 400;   // Mindestdauer für Austritt
 
         // --- „Schwanken“ glätten ---
-        static constexpr float LPF_TAU_S = 0.25f;       // größer = stärker geglättet
+        static constexpr float LPF_TAU_S           = 0.25f;  // größer = stärker geglättet
         static constexpr float OUTPUT_DEADBAND_DEG = 0.8f;
 
         MotionSensor *sensor;
@@ -56,17 +61,49 @@ class RideController {
         float rollDegFiltered     = 0.0f; // gefilterter Rollwinkel nach Offset
         float currentServoAngle   = SERVO::NEUTRAL_DEG;
 
+        uint32_t shockHoldUntil   = 0;
         uint32_t lastTimestamp    = 0;
         float lastToCurrent       = 0.0f;
         uint32_t currentTimestamp = 0;
         uint32_t stateTimerStart  = 0;
+
+        void writeServoAngle(float target, float multiplier = 1.0f) {
+            const float step   = (SERVO::MAX_SPEED_DPS * multiplier) * lastToCurrent;
+            const float delta  = clampf(target - currentServoAngle, -step, +step);
+            const float next   = clampf(currentServoAngle + delta, minAngle(), maxAngle());
+
+            // Slew-Rate-Limiter + optional „nur schreiben, wenn’s sich lohnt“
+            if (fabsf(next - currentServoAngle) > SERVO::WRITE_DEADBAND_DEG) {
+                currentServoAngle = next;
+                servo->write(currentServoAngle);
+            }
+        };
+
+        bool shockDetected(Accel *accel) {
+            if (!accel->valid) return false;
+
+            static float zAvg = G_MPS2;
+            zAvg += 0.2f * (accel->z - zAvg);
+            float devZ = fabsf(zAvg - G_MPS2);
+
+            if (devZ > SHOCK_THR_Z  && currentTimestamp > shockHoldUntil) {
+                shockHoldUntil = currentTimestamp + SHOCK_HOLD_MS;
+            }
+
+            if (currentTimestamp < shockHoldUntil) {
+                writeServoAngle(neutralAngle(), 0.5f);
+                return true;
+            }
+
+            return false;
+        };
 
         static inline float clampf(float v, float lo, float hi) {
             return v < lo ? lo : (v > hi ? hi : v);
         };
 
         float neutralAngle() const {
-            return SERVO::NEUTRAL_DEG + SERVO::GEAR_OFFSET; // + SERVO::GAIN * (-rollDegOffset);
+            return SERVO::NEUTRAL_DEG + SERVO::GEAR_OFFSET;
         }
 
         float minAngle() {
@@ -105,7 +142,7 @@ class RideController {
 
         MotionData runCalibration(uint32_t duration_ms = 2000) {
             Serial.println("Kalibriere... bitte Fahrrad/Mechanik aufrecht halten.");
-            rollDegOffset = sensor->calibrateRollAngle();
+            rollDegOffset = sensor->calibrateRollAngle(duration_ms);
             Serial.println(F("Kalibriere Gyro-Bias... Bitte nicht bewegen."));
             yawBias = sensor->calibrateGyroBias();
 
@@ -117,15 +154,12 @@ class RideController {
         };
 
         void turnNeutral() {
-            float step = SERVO::MAX_SPEED_DPS * lastToCurrent;
-            float target = neutralAngle();
-            float delta = clampf(target - currentServoAngle, -step, +step);
-            currentServoAngle = clampf(currentServoAngle + delta, minAngle(), maxAngle());
-
-            servo->write(currentServoAngle);
+            writeServoAngle(neutralAngle());
         }
 
         void handleCurve(MotionData motionData) {
+            if (shockDetected(&motionData.accel)) return;
+
             float rollDeg = motionData.roll - rollDegOffset;  // kalibrierter Roll
             float yawRate = motionData.yaw;                   // °/s (Bias bereits im Sensor korrigiert)
 
@@ -188,16 +222,6 @@ class RideController {
                 targetDeg = clampf(cmd, minAngle(), maxAngle());
             }
 
-            // --- 4) Slew-Rate-Limiter + optional „nur schreiben, wenn’s sich lohnt“ ---
-            float maxStep = SERVO::MAX_SPEED_DPS * lastToCurrent;
-            float delta   = clampf(targetDeg - currentServoAngle, -maxStep, +maxStep);
-            float next    = clampf(currentServoAngle + delta, minAngle(), maxAngle());
-
-            if (fabsf(next - currentServoAngle) > 0.2f) { // vermeidet Sirren
-                currentServoAngle = next;
-
-                Serial.printf("CurrentAngle: %f°", currentServoAngle);
-                servo->write(currentServoAngle);
-            }
+            writeServoAngle(targetDeg);
         }
 };
