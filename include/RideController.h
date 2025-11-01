@@ -18,10 +18,11 @@ struct SERVO {
   static constexpr int PWM_MIN         = 1000;
   static constexpr int PWM_MAX         = 2000;
   static constexpr float MAX_SPEED_DPS = 360.0f;
-  static constexpr float NEUTRAL_DEG   = 90.0f; 
+  static constexpr float NEUTRAL_DEG   = 90.0f;
+  static constexpr float GEAR_OFFSET   = -7.0f;
   static constexpr float MIN_DEG       = 30.0f;
   static constexpr float MAX_DEG       = 150.0f;
-  static constexpr float GAIN          = -3.5f;
+  static constexpr float GAIN          = -5.5f;
 };
 
 enum class RideState { STRAIGHT, CURVE };
@@ -60,13 +61,22 @@ class RideController {
         uint32_t currentTimestamp = 0;
         uint32_t stateTimerStart  = 0;
 
-        static inline float clampf(float v, float lo = SERVO::MIN_DEG, float hi = SERVO::MAX_DEG) {
+        static inline float clampf(float v, float lo, float hi) {
             return v < lo ? lo : (v > hi ? hi : v);
         };
 
         float neutralAngle() const {
-            return SERVO::NEUTRAL_DEG; // + SERVO::GAIN * (-rollDegOffset);
-        }   
+            return SERVO::NEUTRAL_DEG + SERVO::GEAR_OFFSET; // + SERVO::GAIN * (-rollDegOffset);
+        }
+
+        float minAngle() {
+            return SERVO::MIN_DEG + SERVO::GEAR_OFFSET;
+
+        };
+
+        float maxAngle() {
+            return SERVO::MAX_DEG + SERVO::GEAR_OFFSET;
+        }
 
     public:
         RideController(MotionSensor* s, Servo* v) : sensor(s), servo(v) {}
@@ -77,11 +87,11 @@ class RideController {
             
             servo->setPeriodHertz(50);
             servo->attach(SERVO::PIN, SERVO::PWM_MIN, SERVO::PWM_MAX);
-            servo->write(SERVO::MIN_DEG);
+            servo->write(minAngle());
             delay(500);
-            servo->write(SERVO::MAX_DEG);
+            servo->write(maxAngle());
             delay(500);
-            servo->write(SERVO::NEUTRAL_DEG);
+            servo->write(neutralAngle());
         }
 
         void setTiming() {
@@ -101,7 +111,7 @@ class RideController {
 
             Serial.printf("Kalibrierung fertig. Neuer Offset = %.2f°\n", rollDegOffset);
             Serial.printf("Gyro-Z-Bias: %.3f °/s\n", yawBias);
-            servo->write(SERVO::NEUTRAL_DEG);
+            servo->write(neutralAngle());
 
             return MotionData(rollDegOffset, yawBias);
         };
@@ -110,7 +120,7 @@ class RideController {
             float step = SERVO::MAX_SPEED_DPS * lastToCurrent;
             float target = neutralAngle();
             float delta = clampf(target - currentServoAngle, -step, +step);
-            currentServoAngle = clampf(currentServoAngle + delta);
+            currentServoAngle = clampf(currentServoAngle + delta, minAngle(), maxAngle());
 
             servo->write(currentServoAngle);
         }
@@ -172,19 +182,21 @@ class RideController {
                 float blended = rollDegFiltered + (K_YAW * yawWeight) * yawRate;
 
                 float cmd = neutralAngle() + SERVO::GAIN * blended;
-                if (fabsf(cmd - SERVO::NEUTRAL_DEG) < OUTPUT_DEADBAND_DEG)
-                    cmd = SERVO::NEUTRAL_DEG;
+                if (fabsf(cmd - neutralAngle()) < OUTPUT_DEADBAND_DEG)
+                    cmd = neutralAngle();
 
-                targetDeg = clampf(cmd);
+                targetDeg = clampf(cmd, minAngle(), maxAngle());
             }
 
             // --- 4) Slew-Rate-Limiter + optional „nur schreiben, wenn’s sich lohnt“ ---
             float maxStep = SERVO::MAX_SPEED_DPS * lastToCurrent;
             float delta   = clampf(targetDeg - currentServoAngle, -maxStep, +maxStep);
-            float next    = clampf(currentServoAngle + delta);
+            float next    = clampf(currentServoAngle + delta, minAngle(), maxAngle());
 
             if (fabsf(next - currentServoAngle) > 0.2f) { // vermeidet Sirren
                 currentServoAngle = next;
+
+                Serial.printf("CurrentAngle: %f°", currentServoAngle);
                 servo->write(currentServoAngle);
             }
         }
