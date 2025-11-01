@@ -77,6 +77,10 @@ class RideController {
             
             servo->setPeriodHertz(50);
             servo->attach(SERVO::PIN, SERVO::PWM_MIN, SERVO::PWM_MAX);
+            servo->write(SERVO::MIN_DEG);
+            delay(500);
+            servo->write(SERVO::MAX_DEG);
+            delay(500);
             servo->write(SERVO::NEUTRAL_DEG);
         }
 
