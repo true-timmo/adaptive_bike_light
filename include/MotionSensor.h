@@ -41,13 +41,14 @@ class MotionSensor {
 
     void init(int sdaPin, int sclPin) {
         Wire.setPins(sdaPin, sclPin);
+        Wire.setClock(400000);
         if (!g_sensor.begin()) {
             Serial.println("MPU6050 nicht gefunden! Verdrahtung prüfen.");
             while (true) delay(1000);
         }
         g_sensor.setAccelerometerRange(MPU6050_RANGE_4_G);
         g_sensor.setGyroRange(MPU6050_RANGE_500_DEG);
-        g_sensor.setFilterBandwidth(MPU6050_BAND_44_HZ);
+        g_sensor.setFilterBandwidth(MPU6050_BAND_21_HZ);
     }
 
     float calibrateGyroBias(uint16_t samples = 200, uint16_t delayMs = 5) {

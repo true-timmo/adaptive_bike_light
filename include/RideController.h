@@ -41,11 +41,11 @@ class RideController {
         // Gyro-Assist Einstellungen
         static constexpr float YAW_NORM   = 80.0f;   // °/s für volle Yaw-Gewichtung
         static constexpr float ROLL_NORM  = 10.0f;   // °  für „Roll ist schon groß“
-        static constexpr float K_YAW      = 0.06f;   // Basiseinfluss der Yaw-Rate (Feintuning)
+        static constexpr float K_YAW      = 0.08f;   // Basiseinfluss der Yaw-Rate (Feintuning)
 
-        static constexpr float LEAN_ENTER_DEG   = 4.0f;  // ab diesem gefilterten Rollwinkel: "Kurve"
+        static constexpr float LEAN_ENTER_DEG   = 3.5f;  // ab diesem gefilterten Rollwinkel: "Kurve"
         static constexpr float LEAN_EXIT_DEG    = 2.0f;  // darunter zurück zu "Gerade"
-        static constexpr uint32_t ENTER_HOLD_MS = 180;   // Mindestdauer für Eintritt
+        static constexpr uint32_t ENTER_HOLD_MS = 140;   // Mindestdauer für Eintritt
         static constexpr uint32_t EXIT_HOLD_MS  = 400;   // Mindestdauer für Austritt
 
         // --- „Schwanken“ glätten ---
