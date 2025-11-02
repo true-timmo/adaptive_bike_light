@@ -22,7 +22,7 @@ struct SERVO {
   static constexpr float GEAR_OFFSET        = -7.0f;
   static constexpr float MIN_DEG            = 30.0f;
   static constexpr float MAX_DEG            = 150.0f;
-  static constexpr float GAIN               = -5.5f;
+  static constexpr float GAIN               = -6.0f;
   static constexpr float WRITE_DEADBAND_DEG = 0.2f;
 };
 
@@ -30,7 +30,6 @@ enum class RideState { STRAIGHT, CURVE };
 
 class RideController {
     private:
-        static constexpr uint32_t CALIB_TIME_MS       = 2000;
         static constexpr bool AUTO_RECENTER_ENABLE    = true;
         static constexpr float AUTO_RECENTER_RATE_DPS = 0.05f;
 
@@ -38,12 +37,18 @@ class RideController {
         static constexpr float    SHOCK_THR_Z     = 3.0f;
         static constexpr uint32_t SHOCK_HOLD_MS   = 100;
 
+        // --- Snap / Richtungswechsel-Booster ---
+        static constexpr float    YAW_SNAP_THR_DEGS = 80.0f;   // ab dieser Yaw-Rate (°/s) gilt es als „kräftig“
+        static constexpr uint32_t SNAP_HOLD_MS      = 150;     // so lange Boost aktiv (ms)
+        static constexpr float    K_YAW_SNAP        = 0.10f;   // extra Yaw-Gewichtung im Snap-Fenster
+        static constexpr float    SNAP_SPEED_MULT   = 2.0f;    // Slew-Rate-Multiplikator im Snap-Fenster
+
         // Gyro-Assist Einstellungen
         static constexpr float YAW_NORM   = 80.0f;   // °/s für volle Yaw-Gewichtung
         static constexpr float ROLL_NORM  = 10.0f;   // °  für „Roll ist schon groß“
-        static constexpr float K_YAW      = 0.08f;   // Basiseinfluss der Yaw-Rate (Feintuning)
+        static constexpr float K_YAW      = 0.07f;   // Basiseinfluss der Yaw-Rate (Feintuning)
 
-        static constexpr float LEAN_ENTER_DEG   = 3.5f;  // ab diesem gefilterten Rollwinkel: "Kurve"
+        static constexpr float LEAN_ENTER_DEG   = 3.0f;  // ab diesem gefilterten Rollwinkel: "Kurve"
         static constexpr float LEAN_EXIT_DEG    = 2.0f;  // darunter zurück zu "Gerade"
         static constexpr uint32_t ENTER_HOLD_MS = 140;   // Mindestdauer für Eintritt
         static constexpr uint32_t EXIT_HOLD_MS  = 400;   // Mindestdauer für Austritt
@@ -57,15 +62,17 @@ class RideController {
         RideState state = RideState::STRAIGHT;
 
         float rollDegOffset       = 0.0f;
+        float rollDegFiltered     = 0.0f;
         float yawBias             = 0.0f;
-        float rollDegFiltered     = 0.0f; // gefilterter Rollwinkel nach Offset
+        float prevYawRate         = 0.0f;
         float currentServoAngle   = SERVO::NEUTRAL_DEG;
 
-        uint32_t shockHoldUntil   = 0;
+        uint32_t stateTimerStart  = 0;
+        uint32_t currentTimestamp = 0;
         uint32_t lastTimestamp    = 0;
         float lastToCurrent       = 0.0f;
-        uint32_t currentTimestamp = 0;
-        uint32_t stateTimerStart  = 0;
+        uint32_t snapHoldUntil    = 0;
+        uint32_t shockHoldUntil   = 0;
 
         void writeServoAngle(float target, float multiplier = 1.0f) {
             const float step   = (SERVO::MAX_SPEED_DPS * multiplier) * lastToCurrent;
@@ -77,6 +84,15 @@ class RideController {
                 currentServoAngle = next;
                 servo->write(currentServoAngle);
             }
+        };
+
+        bool snapBoostActive(float yawRate) {
+            if ((yawRate * prevYawRate) < 0.0f && (fmaxf(fabsf(yawRate), fabsf(prevYawRate)) >= YAW_SNAP_THR_DEGS)) {
+                snapHoldUntil = currentTimestamp + SNAP_HOLD_MS;
+            }
+            prevYawRate = yawRate;
+
+            return currentTimestamp < snapHoldUntil;
         };
 
         bool shockDetected(Accel *accel) {
@@ -140,9 +156,9 @@ class RideController {
             lastTimestamp = currentTimestamp;
         }
 
-        MotionData runCalibration(uint32_t duration_ms = 2000) {
+        MotionData runCalibration() {
             Serial.println("Kalibriere... bitte Fahrrad/Mechanik aufrecht halten.");
-            rollDegOffset = sensor->calibrateRollAngle(duration_ms);
+            rollDegOffset = sensor->calibrateRollAngle();
             Serial.println(F("Kalibriere Gyro-Bias... Bitte nicht bewegen."));
             yawBias = sensor->calibrateGyroBias();
 
@@ -161,10 +177,12 @@ class RideController {
             if (shockDetected(&motionData.accel)) return;
 
             float rollDeg = motionData.roll - rollDegOffset;  // kalibrierter Roll
-            float yawRate = motionData.yaw;                   // °/s (Bias bereits im Sensor korrigiert)
+            bool snapBoost = snapBoostActive(motionData.yaw);
+            float yawRate = motionData.yaw * (snapBoost ? (1.0f + K_YAW_SNAP) : 1.0f);
+            float stepMultiplier = snapBoost ? SNAP_SPEED_MULT : 1.0f;
 
             // --- 1) Adaptive Glättung: je kleiner Yaw, desto stärkeres LPF (Gerade ruhiger) ---
-            float yawMag   = fabsf(yawRate);
+            float yawMag   = fabsf(motionData.yaw);
             float yawFrac  = fminf(yawMag / YAW_NORM, 1.0f);                   // 0..1
             float dynTau   = LPF_TAU_S * (1.0f + 0.6f * (1.0f - yawFrac));     // 0.25..0.4 s
             float alpha    = lastToCurrent / (dynTau + lastToCurrent);
@@ -222,6 +240,6 @@ class RideController {
                 targetDeg = clampf(cmd, minAngle(), maxAngle());
             }
 
-            writeServoAngle(targetDeg);
+            writeServoAngle(targetDeg, stepMultiplier);
         }
 };

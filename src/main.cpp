@@ -46,7 +46,7 @@ void handleSleepOnShortPress(ButtonEvent ev) {
 void handleCalibrationOnLongPress(ButtonEvent ev) {
   if (ev != BUTTON_LONG) return;
 
-  MotionData calibrationData = ride.runCalibration(2000);
+  MotionData calibrationData = ride.runCalibration();
 
   eeprom.saveCalibration(calibrationData.roll, calibrationData.yaw);
   Serial.println("Kalibrierung übernommen und gespeichert.");
@@ -61,7 +61,7 @@ void setup() {
   sensor.init(I2C_SDA, I2C_SCL);
   //CalibBlob calib = eeprom.loadCalibration();
 
-  MotionData calibrationData = ride.runCalibration(2000);
+  MotionData calibrationData = ride.runCalibration();
   ride.init(calibrationData);
 
   Serial.println("Starte Kurvenlicht-Regelung...");
