@@ -16,7 +16,7 @@ public:
     BTSerial() = default;
 
     bool begin(const char* deviceName = "LeanLight", uint16_t mtu = 185) {
-        if (_active) return;
+        if (_active) return false;
 
         NimBLEDevice::init(deviceName);
         NimBLEDevice::setMTU(mtu);
