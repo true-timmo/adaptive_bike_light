@@ -57,6 +57,7 @@ class RideController {
         static constexpr float LPF_TAU_S           = 0.25f;  // größer = stärker geglättet
         static constexpr float OUTPUT_DEADBAND_DEG = 0.8f;
 
+        Stream *logger;
         MotionSensor *sensor;
         Servo *servo;
         RideState state = RideState::STRAIGHT;
@@ -89,6 +90,7 @@ class RideController {
         bool snapBoostActive(float yawRate) {
             if ((yawRate * prevYawRate) < 0.0f && (fmaxf(fabsf(yawRate), fabsf(prevYawRate)) >= YAW_SNAP_THR_DEGS)) {
                 snapHoldUntil = currentTimestamp + SNAP_HOLD_MS;
+                logger->printf("%f: Snap boost enabled", currentTimestamp);
             }
             prevYawRate = yawRate;
 
@@ -107,7 +109,7 @@ class RideController {
             }
 
             if (currentTimestamp < shockHoldUntil) {
-                //writeServoAngle(neutralAngle(), 0.5f);
+                logger->printf("%f: Shock detected! Force = %f\n", currentTimestamp, devZ);
                 return true;
             }
 
@@ -132,7 +134,7 @@ class RideController {
         }
 
     public:
-        RideController(MotionSensor* s, Servo* v) : sensor(s), servo(v) {}
+        RideController(MotionSensor* s, Servo* v, Stream* l) : sensor(s), servo(v), logger(l) {}
 
         void init(MotionData calibrationData) {
             rollDegOffset = calibrationData.roll;
@@ -157,19 +159,20 @@ class RideController {
         }
 
         MotionData runCalibration() {
-            Serial.println("Kalibriere... bitte Fahrrad/Mechanik aufrecht halten.");
+            logger->println("Kalibriere... bitte Fahrrad/Mechanik aufrecht halten.");
             rollDegOffset = sensor->calibrateRollAngle();
-            Serial.println(F("Kalibriere Gyro-Bias... Bitte nicht bewegen."));
+            logger->println(F("Kalibriere Gyro-Bias... Bitte nicht bewegen."));
             yawBias = sensor->calibrateGyroBias();
 
-            Serial.printf("Kalibrierung fertig. Neuer Offset = %.2f°\n", rollDegOffset);
-            Serial.printf("Gyro-Z-Bias: %.3f °/s\n", yawBias);
+            logger->printf("Kalibrierung fertig. Neuer Offset = %.2f°\n", rollDegOffset);
+            logger->printf("Gyro-Z-Bias: %.3f °/s\n", yawBias);
             servo->write(neutralAngle());
 
             return MotionData(rollDegOffset, yawBias);
         };
 
         void turnNeutral() {
+            logger->printf("%f: Turn neutral", currentTimestamp);
             writeServoAngle(neutralAngle());
         }
 

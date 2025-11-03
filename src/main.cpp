@@ -9,13 +9,15 @@
 #define I2C_SDA 8
 #define I2C_SCL 20
 #define BUTTON_PIN D1
+#define BT_NAME "LeanLight"
 
 Servo g_servo;
 MotionSensor sensor = MotionSensor(12345);
+BTSerial logger = BTSerial();
 CalibrationStorage eeprom = CalibrationStorage();
 Button button = Button(BUTTON_PIN, LOW);
-RideController ride = RideController(&sensor, &g_servo);
-BTSerial logger = BTSerial();
+RideController ride = RideController(&sensor, &g_servo, &logger);
+CalibBlob calibration;
 
 static void shutdownPeripherals() {
   g_servo.detach();
@@ -46,7 +48,7 @@ void handleSleepOnShortPress(ButtonEvent ev) {
 void handleDevModeOnLongPress(ButtonEvent ev) {
   if (ev != BUTTON_LONG) return;
 
-  String sMode = (logger.begin("LeanLight")) ? "ON" : "OFF";
+  String sMode = (logger.begin(BT_NAME)) ? "ON" : "OFF";
 
   Serial.printf("Toggle dev mode: %s}\n", sMode);
 }
@@ -57,7 +59,11 @@ void setup() {
   delay(100);
   
   sensor.init(I2C_SDA, I2C_SCL);
-  //CalibBlob calib = eeprom.loadCalibration();
+  calibration = eeprom.loadCalibration();
+
+  if (calibration.devModeEnabled) {
+    logger.begin(BT_NAME);
+  }
 
   MotionData calibrationData = ride.runCalibration();
   ride.init(calibrationData);
