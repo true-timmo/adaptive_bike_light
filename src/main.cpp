@@ -3,8 +3,8 @@
 #include "RideController.h"
 #include "MotionSensor.h"
 #include "CalibrationStorage.h"
+#include "BTSerial.h"
 #include "Button.h"
-#include "MotionLogger.h"
 
 #define I2C_SDA 8
 #define I2C_SCL 20
@@ -15,7 +15,7 @@ MotionSensor sensor = MotionSensor(12345);
 CalibrationStorage eeprom = CalibrationStorage();
 Button button = Button(BUTTON_PIN, LOW);
 RideController ride = RideController(&sensor, &g_servo);
-MotionLogger logger = MotionLogger();
+BTSerial logger = BTSerial();
 
 static void shutdownPeripherals() {
   g_servo.detach();
@@ -43,13 +43,12 @@ void handleSleepOnShortPress(ButtonEvent ev) {
   esp_deep_sleep_start();
 }
 
-void handleCalibrationOnLongPress(ButtonEvent ev) {
+void handleDevModeOnLongPress(ButtonEvent ev) {
   if (ev != BUTTON_LONG) return;
 
-  MotionData calibrationData = ride.runCalibration();
+  String sMode = (logger.begin("LeanLight")) ? "ON" : "OFF";
 
-  eeprom.saveCalibration(calibrationData.roll, calibrationData.yaw);
-  Serial.println("Kalibrierung übernommen und gespeichert.");
+  Serial.printf("Toggle dev mode: %s}\n", sMode);
 }
 
 void setup() {
@@ -57,7 +56,6 @@ void setup() {
   eeprom.begin(64);
   delay(100);
   
-  logger.begin();
   sensor.init(I2C_SDA, I2C_SCL);
   //CalibBlob calib = eeprom.loadCalibration();
 
@@ -68,10 +66,20 @@ void setup() {
 }
 
 void loop() {
-  logger.handleSerialMenu();
+  delay(1000);
+
+  // Eingabe testen
+  if (logger.available()) {
+    String cmd = logger.readStringUntil('\n');
+    cmd.trim();
+    Serial.printf("BT Command: %s\n", cmd.c_str());
+
+    if (cmd == "ping") logger.println("pong");
+    if (cmd == "status") logger.println("OK");
+  }
 
   ButtonEvent ev = button.checkEvent();
-  handleCalibrationOnLongPress(ev);
+  handleDevModeOnLongPress(ev);
   handleSleepOnShortPress(ev);
 
   ride.setTiming();
@@ -82,6 +90,5 @@ void loop() {
     return;
   }
 
-  //logger.logMotion(rollDeg);
   ride.handleCurve(motionData);
 }

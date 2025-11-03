@@ -107,7 +107,7 @@ class RideController {
             }
 
             if (currentTimestamp < shockHoldUntil) {
-                writeServoAngle(neutralAngle(), 0.5f);
+                //writeServoAngle(neutralAngle(), 0.5f);
                 return true;
             }
 
