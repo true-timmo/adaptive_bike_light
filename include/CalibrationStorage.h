@@ -4,12 +4,13 @@
 
 struct CalibBlob {
     uint32_t magic = 0xC0FFEE21;
-    uint16_t version = 1;
-    float rollDegOffset = 0.0f;
-    float yawBias = 0.0f;
-    bool devModeEnabled = false;
+    uint16_t version = 2;
+    float    rollDegOffset = 0.0f;
+    float    yawBias = 0.0f;
+    bool     devModeEnabled = false;
     uint16_t crc = 0;
 };
+
 
 class CalibrationStorage {
     private:
@@ -48,20 +49,16 @@ class CalibrationStorage {
         CalibBlob loadCalibration() {
             logger->println("EEPROM: load calibration");
             CalibBlob blob{};
-            EEPROM.get(EEPROM_ADDR, blob);
-
-            bool ok = (blob.magic == 0xC0FFEE21) && (blob.version == 1);
+            EEPROM.get(0, blob);
+            bool ok = (blob.magic == 0xC0FFEE21) && (blob.version == 2);
             if (ok) {
                 uint16_t expectedCrc = crcCalib(blob);
                 ok = (expectedCrc == blob.crc);
             }
-
-            if (ok) {
-                logger->printf("EEPROM: Offset geladen = %.2f°\n", blob.rollDegOffset);
-            } else {
-                logger->println("EEPROM: keine gültige Kalibrierung gefunden (Offset=0).");
+            if (!ok) {
+                logger->println("EEPROM: invalid blob, using defaults");
+                blob = CalibBlob{};
             }
-
             return blob;
         };
 
@@ -73,7 +70,9 @@ class CalibrationStorage {
                 logger->println("EEPROM: commit FAILED");
                 return false;
             }
-            logger->printf("EEPROM: Offset gespeichert = %.2f°\n", blob.rollDegOffset);
+            logger->printf("EEPROM: saved! magic=%08X ver=%u offset=%.2f yaw=%.3f dev=%d crc=%u size=%u\n",
+                        blob.magic, blob.version, blob.rollDegOffset, blob.yawBias,
+                        (int)blob.devModeEnabled, blob.crc, (unsigned)sizeof(blob));
             return true;
         };
 };

@@ -9,7 +9,7 @@
 #define I2C_SDA 8
 #define I2C_SCL 20
 #define BUTTON_PIN D1
-#define BT_NAME "LeanLight"
+#define BT_NAME "Dynamic BeamAssist"
 
 Servo g_servo;
 MotionSensor sensor = MotionSensor(12345);
