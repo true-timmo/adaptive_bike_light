@@ -34,11 +34,11 @@ class RideController {
         static constexpr float AUTO_RECENTER_RATE_DPS = 0.05f;
 
         static constexpr float    G_MPS2          = 9.80665f; // m/s^2
-        static constexpr float    SHOCK_THR_Z     = 3.0f;
+        static constexpr float    SHOCK_THR_Z     = 5.0f;
         static constexpr uint32_t SHOCK_HOLD_MS   = 100;
 
         // --- Snap / Richtungswechsel-Booster ---
-        static constexpr float    YAW_SNAP_THR_DEGS   = 12.0f;  // Peak-Schwelle je Vorzeichenlobe
+        static constexpr float    YAW_SNAP_THR_DEGS   = 11.0f;  // Peak-Schwelle je Vorzeichenlobe
         static constexpr float    YAW_SNAP_JERK_THR   = 400.0f; // °/s², Ableitungsschwelle
         static constexpr uint32_t SNAP_HOLD_MS        = 150;
         static constexpr float    K_YAW_SNAP          = 0.10f;
