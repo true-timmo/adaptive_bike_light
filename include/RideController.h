@@ -37,13 +37,14 @@ class RideController {
         static constexpr float    SHOCK_THR_Z     = 5.0f;
         static constexpr uint32_t SHOCK_HOLD_MS   = 100;
 
-        // --- Snap / Richtungswechsel-Booster ---
-        static constexpr float    YAW_SNAP_THR_DEGS   = 11.0f;  // Peak-Schwelle je Vorzeichenlobe
-        static constexpr float    YAW_SNAP_JERK_THR   = 400.0f; // °/s², Ableitungsschwelle
-        static constexpr uint32_t SNAP_HOLD_MS        = 150;
-        static constexpr float    K_YAW_SNAP          = 0.10f;
-        static constexpr float    SNAP_SPEED_MULT     = 2.0f;
-        static constexpr float    YAW_EPS             = 1.0f;   // Deadzone für Signum
+        // Snap / S-Kurve
+        static constexpr float    YAW_SNAP_THR_DEGS     = 12.0f;  // Peak je Vorzeichenlobe
+        static constexpr float    YAW_SNAP_ENERGY_DEG   = 8.0f;   // ∫|yaw| dt in Grad
+        static constexpr float    YAW_SNAP_JERK_THR     = 3500.0f;// °/s² (deutlich höher)
+        static constexpr uint32_t SNAP_MIN_PHASE_MS     = 70;     // mind. Dauer des vorherigen Lobes
+        static constexpr uint32_t SNAP_REFRACTORY_MS    = 300;    // Sperrzeit nach Snap
+        static constexpr uint32_t SNAP_HOLD_MS          = 150;    // Boost-Dauer
+        static constexpr float    YAW_EPS               = 2.5f;   // Deadzone um 0°/s
 
         // Gyro-Assist Einstellungen
         static constexpr float YAW_NORM   = 80.0f;   // °/s für volle Yaw-Gewichtung
@@ -69,9 +70,13 @@ class RideController {
         float yawBias             = 0.0f;
         float currentServoAngle   = SERVO::NEUTRAL_DEG;
 
-        float prevYawRate = 0.0f;
-        int   prevYawSign = 0;
-        float peakYawMag  = 0.0f;   // max(|yaw|) innerhalb des aktuellen Vorzeichens
+        float prevYawRate      = 0.0f;
+        int      prevYawSign   = 0;
+        float    peakYawMag    = 0.0f;     // max(|yaw|) im aktuellen Lobe
+        float    yawEnergyDeg  = 0.0f;     // ∫|yaw| dt im aktuellen Lobe
+        uint32_t phaseStartMs  = 0;        // Startzeit des aktuellen Lobes
+        uint32_t lastSnapAt    = 0;        // für Refractory
+
 
         uint32_t stateTimerStart  = 0;
         uint32_t currentTimestamp = 0;
@@ -93,50 +98,67 @@ class RideController {
         };
 
         bool snapBoostActive(float yawRate) {
+            // 0) Refractory: kurz nach Snap nicht erneut triggern
+            if (currentTimestamp - lastSnapAt < SNAP_REFRACTORY_MS) {
+                prevYawRate = yawRate;
+                return (currentTimestamp < snapHoldUntil);
+            }
+
             // 1) Signum mit Deadzone
             int sign = 0;
             if (yawRate >  YAW_EPS) sign = +1;
             if (yawRate < -YAW_EPS) sign = -1;
 
-            // 2) Peak-Tracking innerhalb der aktuellen Vorzeichenphase
+            // 2) dt stabilisieren (Jerk-Noise vermeiden)
+            float dt = lastToCurrent;
+            if (dt <= 0.0f) dt = 0.01f;
+            if (dt < 0.002f) dt = 0.002f; // Schutz: unrealistisch kleine dt clampen
+
+            // 3) Innerhalb der aktuellen Vorzeichenphase: Peak & Energie akkumulieren
             if (sign != 0 && sign == prevYawSign) {
                 float mag = fabsf(yawRate);
                 if (mag > peakYawMag) peakYawMag = mag;
+                yawEnergyDeg += mag * dt;  // °/s * s = °
             }
 
-            // 3) Richtungswechsel erkannt?
+            // 4) Richtungswechsel?
             if (sign != 0 && prevYawSign != 0 && (sign != prevYawSign)) {
-                // Intensität der VORHERIGEN Phase anhand des Peaks beurteilen
-                float intensity = peakYawMag; // robuster als Einzelwert im Umschaltmoment
+                uint32_t phaseDur = currentTimestamp - phaseStartMs;
+                float jerk = fabsf((yawRate - prevYawRate) / dt);
 
-                // Jerk (Ableitung) zusätzlich prüfen
-                float dt   = lastToCurrent > 0.0f ? lastToCurrent : 0.01f;
-                float jerk = fabsf((yawRate - prevYawRate) / dt); // °/s²
+                bool enoughDuration = (phaseDur >= SNAP_MIN_PHASE_MS);
+                bool enoughEnergy   = (yawEnergyDeg >= YAW_SNAP_ENERGY_DEG);
+                bool strongPeak     = (peakYawMag >= YAW_SNAP_THR_DEGS);
+                bool strongJerk     = (jerk       >= YAW_SNAP_JERK_THR);
 
-                logger->printf("%u: Dir change. peak=%.1f, jerk=%.0f\n", currentTimestamp, intensity, jerk);
-
-                if (intensity >= YAW_SNAP_THR_DEGS || jerk >= YAW_SNAP_JERK_THR) {
+                if (enoughDuration && enoughEnergy && (strongPeak || strongJerk)) {
                     snapHoldUntil = currentTimestamp + SNAP_HOLD_MS;
-                    logger->printf("%u: Snap boost enabled\n", currentTimestamp);
+                    lastSnapAt    = currentTimestamp;
+                    logger->printf("%u: SNAP peak=%.1f E=%.1f dur=%ums jerk=%.0f\n",
+                                   currentTimestamp, peakYawMag, yawEnergyDeg, phaseDur, jerk);
                 }
 
-                // Neue Phase starten: Peak zurücksetzen mit aktuellem Betrag
-                peakYawMag = fabsf(yawRate);
+                // neue Phase initialisieren
+                peakYawMag    = fabsf(yawRate);
+                yawEnergyDeg  = peakYawMag * dt;
+                phaseStartMs  = currentTimestamp;
             }
 
-            // 4) Phase initialisieren/wechseln
+            // 5) Phasenwechsel initialisieren (Start einer Lobe)
             if (sign != prevYawSign) {
-                // Beim ersten Betreten einer Phase Peak initial setzen
-                if (sign != 0) peakYawMag = fmaxf(peakYawMag, fabsf(yawRate));
                 prevYawSign = sign;
+                phaseStartMs = currentTimestamp;
+                if (sign == 0) { peakYawMag = 0.0f; yawEnergyDeg = 0.0f; }
+                else {
+                    float mag = fabsf(yawRate);
+                    peakYawMag   = mag;
+                    yawEnergyDeg = mag * dt;
+                }
             }
 
-            // 5) Vorbereiten für nächsten Aufruf
             prevYawRate = yawRate;
-
             return (currentTimestamp < snapHoldUntil);
         }
-
 
         bool shockDetected(Accel *accel) {
             if (!accel->valid) return false;
