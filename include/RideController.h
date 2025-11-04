@@ -44,6 +44,8 @@ class RideController {
         static constexpr uint32_t SNAP_MIN_PHASE_MS     = 70;     // mind. Dauer des vorherigen Lobes
         static constexpr uint32_t SNAP_REFRACTORY_MS    = 300;    // Sperrzeit nach Snap
         static constexpr uint32_t SNAP_HOLD_MS          = 150;    // Boost-Dauer
+        static constexpr float    K_YAW_SNAP            = 0.10f;
+        static constexpr float    SNAP_SPEED_MULT       = 2.0f;
         static constexpr float    YAW_EPS               = 2.5f;   // Deadzone um 0°/s
 
         // Gyro-Assist Einstellungen
