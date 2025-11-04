@@ -14,7 +14,7 @@
 Servo g_servo;
 MotionSensor sensor = MotionSensor(12345);
 BTSerial logger = BTSerial();
-CalibrationStorage eeprom = CalibrationStorage();
+CalibrationStorage eeprom = CalibrationStorage(&logger);
 Button button = Button(BUTTON_PIN, LOW);
 RideController ride = RideController(&sensor, &g_servo, &logger);
 CalibBlob calibration;
@@ -25,7 +25,7 @@ static void shutdownPeripherals() {
 
 static void printWakeCause() {
   esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
-  Serial.printf("Wake cause: %d\n", (int)cause);
+  logger.printf("Wake cause: %d\n", (int)cause);
 }
 
 void handleSleepOnShortPress(ButtonEvent ev) {
@@ -48,9 +48,13 @@ void handleSleepOnShortPress(ButtonEvent ev) {
 void handleDevModeOnLongPress(ButtonEvent ev) {
   if (ev != BUTTON_LONG) return;
 
-  String sMode = (logger.begin(BT_NAME)) ? "ON" : "OFF";
+  calibration = eeprom.loadCalibration();
+  calibration.devModeEnabled = !calibration.devModeEnabled;
+  eeprom.saveCalibration(calibration);
 
-  Serial.printf("Toggle dev mode: %s}\n", sMode);
+  String sMode = (calibration.devModeEnabled) ? "ON" : "OFF";
+
+  logger.printf("Toggle dev mode: %s\n", sMode);
 }
 
 void setup() {
@@ -72,8 +76,6 @@ void setup() {
 }
 
 void loop() {
-  delay(1000);
-
   // Eingabe testen
   if (logger.available()) {
     String cmd = logger.readStringUntil('\n');

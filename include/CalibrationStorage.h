@@ -14,6 +14,8 @@ struct CalibBlob {
 class CalibrationStorage {
     private:
         static constexpr int EEPROM_ADDR = 0;
+
+        Stream *logger;
         bool initialized = false;
         size_t eepromSize = 0;
 
@@ -34,7 +36,7 @@ class CalibrationStorage {
         }
 
     public:
-        CalibrationStorage() = default;
+        CalibrationStorage(Stream* l) : logger(l) {};
 
         bool begin(size_t memorySize) {
             eepromSize = memorySize;
@@ -44,6 +46,7 @@ class CalibrationStorage {
         }
 
         CalibBlob loadCalibration() {
+            logger->println("EEPROM: load calibration");
             CalibBlob blob{};
             EEPROM.get(EEPROM_ADDR, blob);
 
@@ -54,25 +57,23 @@ class CalibrationStorage {
             }
 
             if (ok) {
-                Serial.printf("EEPROM: Offset geladen = %.2f°\n", blob.rollDegOffset);
+                logger->printf("EEPROM: Offset geladen = %.2f°\n", blob.rollDegOffset);
             } else {
-                Serial.println("EEPROM: keine gültige Kalibrierung gefunden (Offset=0).");
+                logger->println("EEPROM: keine gültige Kalibrierung gefunden (Offset=0).");
             }
 
             return blob;
         };
 
-        bool saveCalibration(float offsetDeg, float yawBias) {
-            CalibBlob blob{};
-            blob.rollDegOffset = offsetDeg;
-            blob.yawBias = yawBias;
+        bool saveCalibration(CalibBlob& blob) {
+            logger->println("EEPROM: save calibration");
             blob.crc = crcCalib(blob);
             EEPROM.put(EEPROM_ADDR, blob);
             if (!EEPROM.commit()) {
-                Serial.println("EEPROM: commit FAILED");
+                logger->println("EEPROM: commit FAILED");
                 return false;
             }
-            Serial.printf("EEPROM: Offset gespeichert = %.2f°\n", offsetDeg);
+            logger->printf("EEPROM: Offset gespeichert = %.2f°\n", blob.rollDegOffset);
             return true;
         };
 };
