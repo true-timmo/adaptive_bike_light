@@ -100,30 +100,30 @@ class RideController {
         };
 
         bool snapBoostActive(float yawRate) {
-            // 0) Refractory: kurz nach Snap nicht erneut triggern
+            // Refractory: kurz nach Snap nicht erneut triggern
             if (currentTimestamp - lastSnapAt < SNAP_REFRACTORY_MS) {
                 prevYawRate = yawRate;
                 return (currentTimestamp < snapHoldUntil);
             }
 
-            // 1) Signum mit Deadzone
+            // Signum mit Deadzone
             int sign = 0;
             if (yawRate >  YAW_EPS) sign = +1;
             if (yawRate < -YAW_EPS) sign = -1;
 
-            // 2) dt stabilisieren (Jerk-Noise vermeiden)
+            // dt stabilisieren (Jerk-Noise vermeiden)
             float dt = lastToCurrent;
             if (dt <= 0.0f) dt = 0.01f;
             if (dt < 0.002f) dt = 0.002f; // Schutz: unrealistisch kleine dt clampen
 
-            // 3) Innerhalb der aktuellen Vorzeichenphase: Peak & Energie akkumulieren
+            // Innerhalb der aktuellen Vorzeichenphase: Peak & Energie akkumulieren
             if (sign != 0 && sign == prevYawSign) {
                 float mag = fabsf(yawRate);
                 if (mag > peakYawMag) peakYawMag = mag;
                 yawEnergyDeg += mag * dt;  // °/s * s = °
             }
 
-            // 4) Richtungswechsel?
+            // Richtungswechsel?
             if (sign != 0 && prevYawSign != 0 && (sign != prevYawSign)) {
                 uint32_t phaseDur = currentTimestamp - phaseStartMs;
                 float jerk = fabsf((yawRate - prevYawRate) / dt);
@@ -146,7 +146,7 @@ class RideController {
                 phaseStartMs  = currentTimestamp;
             }
 
-            // 5) Phasenwechsel initialisieren (Start einer Lobe)
+            // Phasenwechsel initialisieren (Start einer Lobe)
             if (sign != prevYawSign) {
                 prevYawSign = sign;
                 phaseStartMs = currentTimestamp;
@@ -224,39 +224,37 @@ class RideController {
         }
 
         MotionData runCalibration() {
-            logger->println("Kalibriere... bitte Fahrrad/Mechanik aufrecht halten.");
+            logger->println("Calibrating roll angle...");
             rollDegOffset = sensor->calibrateRollAngle();
-            logger->println(F("Kalibriere Gyro-Bias... Bitte nicht bewegen."));
+            logger->println(F("Calibrating Gyro-Bias..."));
             yawBias = sensor->calibrateGyroBias();
 
-            logger->printf("Kalibrierung fertig. Neuer Offset = %.2f°\n", rollDegOffset);
-            logger->printf("Gyro-Z-Bias: %.3f °/s\n", yawBias);
+            logger->printf("Calibration done. Roll-Offset = %.2f°, Gyro-Z-Bias: %.3f °/s\n", rollDegOffset, yawBias);
             servo->write(neutralAngle());
 
             return MotionData(rollDegOffset, yawBias);
         };
 
         void turnNeutral() {
-            logger->printf("%d: Turn neutral", currentTimestamp);
             writeServoAngle(neutralAngle());
         }
 
         void handleCurve(MotionData motionData) {
             if (shockDetected(&motionData.accel)) return;
 
-            float rollDeg = motionData.roll - rollDegOffset;  // kalibrierter Roll
+            float rollDeg = motionData.roll - rollDegOffset;
             bool snapBoost = snapBoostActive(motionData.yaw);
             float yawRate = motionData.yaw * (snapBoost ? (1.0f + K_YAW_SNAP) : 1.0f);
             float stepMultiplier = snapBoost ? SNAP_SPEED_MULT : 1.0f;
 
-            // --- 1) Adaptive Glättung: je kleiner Yaw, desto stärkeres LPF (Gerade ruhiger) ---
+            // Adaptive Glättung: je kleiner Yaw, desto stärkeres LPF (Gerade ruhiger) ---
             float yawMag   = fabsf(motionData.yaw);
             float yawFrac  = fminf(yawMag / YAW_NORM, 1.0f);                   // 0..1
             float dynTau   = LPF_TAU_S * (1.0f + 0.6f * (1.0f - yawFrac));     // 0.25..0.4 s
             float alpha    = lastToCurrent / (dynTau + lastToCurrent);
             rollDegFiltered += alpha * (rollDeg - rollDegFiltered);
 
-            // --- 2) Zustandserkennung (Hysterese) – Eintritt erleichtern, wenn Yaw groß ---
+            // Zustandserkennung (Hysterese) – Eintritt erleichtern, wenn Yaw groß ---
             float absLean = fabsf(rollDegFiltered);
             float leanEnterDyn = LEAN_ENTER_DEG - 1.5f * yawFrac;              // bis ~1.5° leichter
             if (leanEnterDyn < 1.0f) leanEnterDyn = 1.0f;
@@ -285,7 +283,7 @@ class RideController {
                 break;
             }
 
-            // --- 3) Zielwinkel: Roll dominiert bei großer Schräglage, Yaw hilft v. a. bei kleinem Roll ---
+            // Zielwinkel: Roll dominiert bei großer Schräglage, Yaw hilft v. a. bei kleinem Roll ---
             float targetDeg;
             if (state == RideState::STRAIGHT) {
                 targetDeg = neutralAngle();

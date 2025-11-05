@@ -30,6 +30,7 @@ struct MotionData {
 
 class MotionSensor {
   private:
+    static constexpr float ROLL_ALPHA = 0.98f;
     static constexpr float ROLL_SIGN = 1.0f;
     float roll = 0.0f;
     unsigned long tPrev = 0;
@@ -43,7 +44,7 @@ class MotionSensor {
         Wire.setPins(sdaPin, sclPin);
         Wire.setClock(400000);
         if (!g_sensor.begin()) {
-            Serial.println("MPU6050 nicht gefunden! Verdrahtung prüfen.");
+            Serial.println("MPU6050 not found!");
             while (true) delay(1000);
         }
         g_sensor.setAccelerometerRange(MPU6050_RANGE_4_G);
@@ -110,9 +111,9 @@ class MotionSensor {
         tPrev = now;
 
         float rollAcc = atan2f(ROLL_SIGN * ay, az) * 180.0f / M_PI;
+        float rollGyro = (roll + gyroX * dt);
 
-        const float alpha = 0.98f;
-        roll = alpha * (roll + gyroX * dt) + (1.0f - alpha) * rollAcc;
+        roll = ROLL_ALPHA * rollGyro + (1.0f - ROLL_ALPHA) * rollAcc;
 
         return MotionData(roll, gyroZ, Accel(ax, ay, az));
     }
