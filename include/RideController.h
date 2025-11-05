@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include "SnapDetector.h"
 
 #ifndef ESP32_Servo_h
 #include <ESP32Servo.h>
@@ -9,17 +10,13 @@
 #include "MotionSensor.h"
 #endif
 
-/*
- * Servo reagiert auf Neigewinkel (Grad): servo = neutral + GAIN * lean_deg
- * Vorzeichen bestimmt, ob „in die Kurve“ gelenkt wird.
- */
 struct SERVO {
   static constexpr int PIN                  = 10;
   static constexpr int PWM_MIN              = 1000;
   static constexpr int PWM_MAX              = 2000;
   static constexpr float MAX_SPEED_DPS      = 360.0f;
   static constexpr float NEUTRAL_DEG        = 90.0f;
-  static constexpr float GEAR_OFFSET        = -7.0f;
+  static constexpr float MECHANICAL_OFFSET  = -7.0f;
   static constexpr float MIN_DEG            = 30.0f;
   static constexpr float MAX_DEG            = 150.0f;
   static constexpr float GAIN               = -6.0f;
@@ -37,21 +34,12 @@ class RideController {
         static constexpr float    SHOCK_THR_Z     = 6.0f;
         static constexpr uint32_t SHOCK_HOLD_MS   = 100;
 
-        // Snap / S-Kurve
-        static constexpr float    YAW_SNAP_THR_DEGS     = 11.0f;  // Peak je Vorzeichenlobe
-        static constexpr float    YAW_SNAP_ENERGY_DEG   = 8.0f;   // ∫|yaw| dt in Grad
-        static constexpr float    YAW_SNAP_JERK_THR     = 3500.0f;// °/s² (deutlich höher)
-        static constexpr uint32_t SNAP_MIN_PHASE_MS     = 70;     // mind. Dauer des vorherigen Lobes
-        static constexpr uint32_t SNAP_REFRACTORY_MS    = 300;    // Sperrzeit nach Snap
-        static constexpr uint32_t SNAP_HOLD_MS          = 150;    // Boost-Dauer
-        static constexpr float    K_YAW_SNAP            = 0.10f;
-        static constexpr float    SNAP_SPEED_MULT       = 2.0f;
-        static constexpr float    YAW_EPS               = 2.5f;   // Deadzone um 0°/s
-
         // Gyro-Assist Einstellungen
         static constexpr float YAW_NORM   = 80.0f;   // °/s für volle Yaw-Gewichtung
         static constexpr float ROLL_NORM  = 10.0f;   // °  für „Roll ist schon groß“
         static constexpr float K_YAW      = 0.07f;   // Basiseinfluss der Yaw-Rate (Feintuning)
+        static constexpr float K_YAW_SNAP = 0.10f;
+        static constexpr float SNAP_SPEED_MULT = 2.0f;
 
         static constexpr float LEAN_ENTER_DEG   = 3.0f;  // ab diesem gefilterten Rollwinkel: "Kurve"
         static constexpr float LEAN_EXIT_DEG    = 2.0f;  // darunter zurück zu "Gerade"
@@ -66,25 +54,17 @@ class RideController {
         MotionSensor *sensor;
         Servo *servo;
         RideState state = RideState::STRAIGHT;
+        SnapDetector snap;
 
         float rollDegOffset       = 0.0f;
         float rollDegFiltered     = 0.0f;
         float yawBias             = 0.0f;
         float currentServoAngle   = SERVO::NEUTRAL_DEG;
 
-        float prevYawRate      = 0.0f;
-        int      prevYawSign   = 0;
-        float    peakYawMag    = 0.0f;     // max(|yaw|) im aktuellen Lobe
-        float    yawEnergyDeg  = 0.0f;     // ∫|yaw| dt im aktuellen Lobe
-        uint32_t phaseStartMs  = 0;        // Startzeit des aktuellen Lobes
-        uint32_t lastSnapAt    = 0;        // für Refractory
-
-
         uint32_t stateTimerStart  = 0;
         uint32_t currentTimestamp = 0;
         uint32_t lastTimestamp    = 0;
         float lastToCurrent       = 0.0f;
-        uint32_t snapHoldUntil    = 0;
         uint32_t shockHoldUntil   = 0;
 
         void writeServoAngle(float target, float multiplier = 1.0f) {
@@ -98,69 +78,6 @@ class RideController {
                 servo->write(currentServoAngle);
             }
         };
-
-        bool snapBoostActive(float yawRate) {
-            // Refractory: kurz nach Snap nicht erneut triggern
-            if (currentTimestamp - lastSnapAt < SNAP_REFRACTORY_MS) {
-                prevYawRate = yawRate;
-                return (currentTimestamp < snapHoldUntil);
-            }
-
-            // Signum mit Deadzone
-            int sign = 0;
-            if (yawRate >  YAW_EPS) sign = +1;
-            if (yawRate < -YAW_EPS) sign = -1;
-
-            // dt stabilisieren (Jerk-Noise vermeiden)
-            float dt = lastToCurrent;
-            if (dt <= 0.0f) dt = 0.01f;
-            if (dt < 0.002f) dt = 0.002f; // Schutz: unrealistisch kleine dt clampen
-
-            // Innerhalb der aktuellen Vorzeichenphase: Peak & Energie akkumulieren
-            if (sign != 0 && sign == prevYawSign) {
-                float mag = fabsf(yawRate);
-                if (mag > peakYawMag) peakYawMag = mag;
-                yawEnergyDeg += mag * dt;  // °/s * s = °
-            }
-
-            // Richtungswechsel?
-            if (sign != 0 && prevYawSign != 0 && (sign != prevYawSign)) {
-                uint32_t phaseDur = currentTimestamp - phaseStartMs;
-                float jerk = fabsf((yawRate - prevYawRate) / dt);
-
-                bool enoughDuration = (phaseDur >= SNAP_MIN_PHASE_MS);
-                bool enoughEnergy   = (yawEnergyDeg >= YAW_SNAP_ENERGY_DEG);
-                bool strongPeak     = (peakYawMag >= YAW_SNAP_THR_DEGS);
-                bool strongJerk     = (jerk       >= YAW_SNAP_JERK_THR);
-
-                if (enoughDuration && enoughEnergy && (strongPeak || strongJerk)) {
-                    snapHoldUntil = currentTimestamp + SNAP_HOLD_MS;
-                    lastSnapAt    = currentTimestamp;
-                    logger->printf("SNAP peak=%.1f E=%.1f dur=%ums jerk=%.0f\n",
-                                   peakYawMag, yawEnergyDeg, phaseDur, jerk);
-                }
-
-                // neue Phase initialisieren
-                peakYawMag    = fabsf(yawRate);
-                yawEnergyDeg  = peakYawMag * dt;
-                phaseStartMs  = currentTimestamp;
-            }
-
-            // Phasenwechsel initialisieren (Start einer Lobe)
-            if (sign != prevYawSign) {
-                prevYawSign = sign;
-                phaseStartMs = currentTimestamp;
-                if (sign == 0) { peakYawMag = 0.0f; yawEnergyDeg = 0.0f; }
-                else {
-                    float mag = fabsf(yawRate);
-                    peakYawMag   = mag;
-                    yawEnergyDeg = mag * dt;
-                }
-            }
-
-            prevYawRate = yawRate;
-            return (currentTimestamp < snapHoldUntil);
-        }
 
         bool shockDetected(Accel *accel) {
             if (!accel->valid) return false;
@@ -186,20 +103,25 @@ class RideController {
         };
 
         float neutralAngle() const {
-            return SERVO::NEUTRAL_DEG + SERVO::GEAR_OFFSET;
+            return SERVO::NEUTRAL_DEG + SERVO::MECHANICAL_OFFSET;
         }
 
         float minAngle() {
-            return SERVO::MIN_DEG + SERVO::GEAR_OFFSET;
+            return SERVO::MIN_DEG + SERVO::MECHANICAL_OFFSET;
 
         };
 
         float maxAngle() {
-            return SERVO::MAX_DEG + SERVO::GEAR_OFFSET;
+            return SERVO::MAX_DEG + SERVO::MECHANICAL_OFFSET;
         }
 
     public:
-        RideController(MotionSensor* s, Servo* v, Stream* l) : sensor(s), servo(v), logger(l) {}
+        RideController(MotionSensor* s, Servo* v, Stream* l) : 
+            sensor(s),
+            servo(v),
+            logger(l),
+            snap(l, currentTimestamp, lastToCurrent)
+        {};
 
         void init(MotionData calibrationData) {
             rollDegOffset = calibrationData.roll;
@@ -244,7 +166,7 @@ class RideController {
             const bool inShock = shockDetected(&motionData.accel);
 
             float rollDeg = motionData.roll - rollDegOffset;
-            bool snapBoost = snapBoostActive(motionData.yaw);
+            bool snapBoost = snap.snapDetected(motionData.yaw);
             float yawRate = motionData.yaw * (snapBoost ? (1.0f + K_YAW_SNAP) : 1.0f);
             float stepMultiplier = snapBoost ? SNAP_SPEED_MULT : 1.0f;
 
