@@ -34,11 +34,11 @@ class RideController {
         static constexpr float AUTO_RECENTER_RATE_DPS = 0.05f;
 
         static constexpr float    G_MPS2          = 9.80665f; // m/s^2
-        static constexpr float    SHOCK_THR_Z     = 5.0f;
+        static constexpr float    SHOCK_THR_Z     = 6.0f;
         static constexpr uint32_t SHOCK_HOLD_MS   = 100;
 
         // Snap / S-Kurve
-        static constexpr float    YAW_SNAP_THR_DEGS     = 12.0f;  // Peak je Vorzeichenlobe
+        static constexpr float    YAW_SNAP_THR_DEGS     = 11.0f;  // Peak je Vorzeichenlobe
         static constexpr float    YAW_SNAP_ENERGY_DEG   = 8.0f;   // ∫|yaw| dt in Grad
         static constexpr float    YAW_SNAP_JERK_THR     = 3500.0f;// °/s² (deutlich höher)
         static constexpr uint32_t SNAP_MIN_PHASE_MS     = 70;     // mind. Dauer des vorherigen Lobes
@@ -175,6 +175,7 @@ class RideController {
             }
 
             if (currentTimestamp < shockHoldUntil) {
+                turnNeutral();
                 return true;
             }
 
