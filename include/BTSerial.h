@@ -88,6 +88,7 @@ public:
 
     int available() override {
         if (!_active) return 0;
+        if (_server->getConnectedCount() == 0) return 0;
 
         return (_rxHead >= _rxTail)
             ? (_rxHead - _rxTail)

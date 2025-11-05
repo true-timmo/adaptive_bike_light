@@ -80,10 +80,9 @@ void loop() {
   if (logger.available()) {
     String cmd = logger.readStringUntil('\n');
     cmd.trim();
-    Serial.printf("BT Command: %s\n", cmd.c_str());
-
     if (cmd == "ping") logger.println("pong");
-    if (cmd == "status") logger.println("OK");
+    if (cmd == "set") logger.println("OK");
+    if (cmd == "help") logger.println("ping set");
   }
 
   ButtonEvent ev = button.checkEvent();
