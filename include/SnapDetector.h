@@ -5,8 +5,8 @@
 
 class SnapDetector {
     private:
-        static constexpr float    YAW_SNAP_THR_DEGS     = 11.0f;  // Peak je Vorzeichenlobe
-        static constexpr float    YAW_SNAP_ENERGY_DEG   = 8.0f;   // ∫|yaw| dt in Grad
+        static constexpr float    YAW_SNAP_THR_DEGS     = 50.0f;  // Peak je Vorzeichenlobe
+        static constexpr float    YAW_SNAP_ENERGY_DEG   = 16.0f;   // ∫|yaw| dt in Grad
         static constexpr float    YAW_SNAP_JERK_THR     = 3500.0f;// °/s² (deutlich höher)
         static constexpr uint32_t SNAP_MIN_PHASE_MS     = 70;     // mind. Dauer des vorherigen Lobes
         static constexpr uint32_t SNAP_REFRACTORY_MS    = 300;    // Sperrzeit nach Snap

@@ -19,7 +19,7 @@ struct SERVO {
   static constexpr float MECHANICAL_OFFSET  = -7.0f;
   static constexpr float MIN_DEG            = 30.0f;
   static constexpr float MAX_DEG            = 150.0f;
-  static constexpr float GAIN               = -6.0f;
+  static constexpr float GAIN               = -5.5f;
   static constexpr float WRITE_DEADBAND_DEG = 0.2f;
 };
 
