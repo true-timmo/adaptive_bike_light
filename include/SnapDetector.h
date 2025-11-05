@@ -13,48 +13,48 @@ class SnapDetector {
         static constexpr uint32_t SNAP_HOLD_MS          = 150;    // Boost-Dauer
         static constexpr float    YAW_EPS               = 2.5f;   // Deadzone um 0°/s
 
-        float prevYawRate      = 0.0f;
-        int      prevYawSign   = 0;
-        float    peakYawMag    = 0.0f;     // max(|yaw|) im aktuellen Lobe
-        float    yawEnergyDeg  = 0.0f;     // ∫|yaw| dt im aktuellen Lobe
-        uint32_t phaseStartMs  = 0;        // Startzeit des aktuellen Lobes
-        uint32_t lastSnapAt    = 0;        // für Refractory
+        float    prevYawRate   = 0.0f;
+        int      lastNonZeroSign = 0;
+        float    peakYawMag    = 0.0f;
+        float    yawEnergyDeg  = 0.0f;
+        uint32_t phaseStartMs  = 0;
+        uint32_t lastSnapAt    = 0;
         uint32_t snapHoldUntil = 0;
-        
+
         uint32_t& now;
-        float& dtRef;
-        Stream* logger;
+        float&    dtRef;
+        Stream*   logger;
 
     public:
         SnapDetector(Stream* l, uint32_t& currentTimestamp, float& lastToCurrent)
-            : logger(l), now(currentTimestamp), dtRef(lastToCurrent) {}
+        : now(currentTimestamp), dtRef(lastToCurrent), logger(l) {}
 
-        bool snapDetected(float& yawRate) {
-            // Refractory: kurz nach Snap nicht erneut triggern
+        bool snapDetected(float yawRate) {
+            // 0) Refractory
             if (now - lastSnapAt < SNAP_REFRACTORY_MS) {
                 prevYawRate = yawRate;
                 return (now < snapHoldUntil);
             }
 
-            // Signum mit Deadzone
+            // 1) Signum mit Deadzone
             int sign = 0;
             if (yawRate >  YAW_EPS) sign = +1;
             if (yawRate < -YAW_EPS) sign = -1;
 
-            // dt stabilisieren (Jerk-Noise vermeiden)
+            // 2) dt stabilisieren
             float dt = dtRef;
-            if (dt <= 0.0f) dt = 0.01f;
-            if (dt < 0.002f) dt = 0.002f; // Schutz: unrealistisch kleine dt clampen
+            if (dt <= 0.0f)  dt = 0.01f;
+            if (dt < 0.002f) dt = 0.002f;
 
-            // Innerhalb der aktuellen Vorzeichenphase: Peak & Energie akkumulieren
-            if (sign != 0 && sign == prevYawSign) {
+            // 3) Wenn wir innerhalb eines laufenden (nicht-null) Lobes sind: Peak & Energie aufsummieren
+            if (sign != 0 && sign == lastNonZeroSign) {
                 float mag = fabsf(yawRate);
                 if (mag > peakYawMag) peakYawMag = mag;
-                yawEnergyDeg += mag * dt;  // °/s * s = °
+                yawEnergyDeg += mag * dt;   // °/s * s = °
             }
 
-            // Richtungswechsel?
-            if (sign != 0 && prevYawSign != 0 && (sign != prevYawSign)) {
+            // 4) Richtungswechsel? (nur wenn beide Seiten !=0 und unterschiedlich)
+            if (sign != 0 && lastNonZeroSign != 0 && sign != lastNonZeroSign) {
                 uint32_t phaseDur = now - phaseStartMs;
                 float jerk = fabsf((yawRate - prevYawRate) / dt);
 
@@ -64,32 +64,30 @@ class SnapDetector {
                 bool strongJerk     = (jerk       >= YAW_SNAP_JERK_THR);
 
                 if (enoughDuration && enoughEnergy && (strongPeak || strongJerk)) {
-                    snapHoldUntil = now + SNAP_HOLD_MS;
-                    lastSnapAt    = now;
-                    logger->printf("SNAP peak=%.1f E=%.1f dur=%ums jerk=%.0f\n",
-                                   peakYawMag, yawEnergyDeg, phaseDur, jerk);
+                snapHoldUntil = now + SNAP_HOLD_MS;
+                lastSnapAt    = now;
+                if (logger) logger->printf("SNAP peak=%.1f E=%.1f dur=%ums jerk=%.0f\n",
+                                            peakYawMag, yawEnergyDeg, phaseDur, jerk);
                 }
 
-                // neue Phase initialisieren
-                peakYawMag    = fabsf(yawRate);
-                yawEnergyDeg  = peakYawMag * dt;
-                phaseStartMs  = now;
+                // neue Phase starten (mit aktuellem Signum, NICHT 0)
+                lastNonZeroSign = sign;
+                peakYawMag      = fabsf(yawRate);
+                yawEnergyDeg    = peakYawMag * dt;
+                phaseStartMs    = now;
             }
 
-            // Phasenwechsel initialisieren (Start einer Lobe)
-            if (sign != prevYawSign) {
-                prevYawSign = sign;
-                phaseStartMs = now;
-                if (sign == 0) { peakYawMag = 0.0f; yawEnergyDeg = 0.0f; }
-                else {
-                    float mag = fabsf(yawRate);
-                    peakYawMag   = mag;
-                    yawEnergyDeg = mag * dt;
-                }
+            // 5) Phasenstart, wenn wir erstmals ein nicht-null Signum betreten
+            if (sign != 0 && lastNonZeroSign == 0) {
+                lastNonZeroSign = sign;
+                phaseStartMs    = now;
+                float mag = fabsf(yawRate);
+                peakYawMag      = mag;
+                yawEnergyDeg    = mag * dt;
             }
-
             prevYawRate = yawRate;
+
             return (now < snapHoldUntil);
-        };
+        }
 };
 #endif // _SnapDetector_h_
