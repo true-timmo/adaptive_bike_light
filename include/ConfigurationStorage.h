@@ -2,17 +2,21 @@
 #include <Arduino.h>
 #include <EEPROM.h>
 
-struct CalibBlob {
+struct ConfigBlob {
     uint32_t magic = 0xC0FFEE21;
-    uint16_t version = 2;
+    uint16_t version = 3;
     float    rollDegOffset = 0.0f;
     float    yawBias = 0.0f;
     bool     devModeEnabled = false;
+    float    gearOffset = -7.0f;
+    float    gain = -5.5f;
+    float    leanEnterDeg = 2.5f;
+    float    leanExitDeg = 2.0f;
     uint16_t crc = 0;
 };
 
 
-class CalibrationStorage {
+class ConfigurationStorage {
     private:
         static constexpr int EEPROM_ADDR = 0;
 
@@ -26,18 +30,23 @@ class CalibrationStorage {
             return c;
         };
 
-        uint16_t crcCalib(const CalibBlob& b) {
+        uint16_t crcConfig(const ConfigBlob& b) {
             uint16_t c = 0;
             c = crc16_acc((const uint8_t*)&b.magic,   sizeof b.magic);
             c = crc16_acc((const uint8_t*)&b.version, sizeof b.version) + c;
             c = crc16_acc((const uint8_t*)&b.rollDegOffset, sizeof b.rollDegOffset) + c;
             c = crc16_acc((const uint8_t*)&b.yawBias, sizeof b.yawBias) + c;
             c = crc16_acc((const uint8_t*)&b.devModeEnabled, sizeof b.devModeEnabled) + c;
+            c = crc16_acc((const uint8_t*)&b.gearOffset, sizeof b.gearOffset) + c;
+            c = crc16_acc((const uint8_t*)&b.gain, sizeof b.gain) + c;
+            c = crc16_acc((const uint8_t*)&b.leanEnterDeg, sizeof b.leanEnterDeg) + c;
+            c = crc16_acc((const uint8_t*)&b.leanExitDeg, sizeof b.leanExitDeg) + c;
+
             return c;
         }
 
     public:
-        CalibrationStorage(Stream* l) : logger(l) {};
+        ConfigurationStorage(Stream* l) : logger(l) {};
 
         bool begin(size_t memorySize) {
             eepromSize = memorySize;
@@ -46,33 +55,33 @@ class CalibrationStorage {
             return initialized;
         }
 
-        CalibBlob loadCalibration() {
+        ConfigBlob loadCalibration() {
             logger->println("EEPROM: load calibration");
-            CalibBlob blob{};
+            ConfigBlob blob{};
             EEPROM.get(0, blob);
             bool ok = (blob.magic == 0xC0FFEE21) && (blob.version == 2);
             if (ok) {
-                uint16_t expectedCrc = crcCalib(blob);
+                uint16_t expectedCrc = crcConfig(blob);
                 ok = (expectedCrc == blob.crc);
             }
             if (!ok) {
                 logger->println("EEPROM: invalid blob, using defaults");
-                blob = CalibBlob{};
+                blob = ConfigBlob{};
             }
             return blob;
         };
 
-        bool saveCalibration(CalibBlob& blob) {
+        bool saveCalibration(ConfigBlob& blob) {
             logger->println("EEPROM: save calibration");
-            blob.crc = crcCalib(blob);
+            blob.crc = crcConfig(blob);
             EEPROM.put(EEPROM_ADDR, blob);
             if (!EEPROM.commit()) {
                 logger->println("EEPROM: commit FAILED");
                 return false;
             }
-            logger->printf("EEPROM: saved! magic=%08X ver=%u offset=%.2f yaw=%.3f dev=%d crc=%u size=%u\n",
+            logger->printf("EEPROM: saved! magic=%08X ver=%u offset=%.2f yaw=%.3f dev=%d gain=%.3f crc=%u size=%u\n",
                         blob.magic, blob.version, blob.rollDegOffset, blob.yawBias,
-                        (int)blob.devModeEnabled, blob.crc, (unsigned)sizeof(blob));
+                        (int)blob.devModeEnabled, blob.gain, blob.crc, (unsigned)sizeof(blob));
             return true;
         };
 };

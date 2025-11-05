@@ -2,7 +2,7 @@
 #include "esp_sleep.h"
 #include "RideController.h"
 #include "MotionSensor.h"
-#include "CalibrationStorage.h"
+#include "ConfigurationStorage.h"
 #include "BTSerial.h"
 #include "Button.h"
 
@@ -14,10 +14,10 @@
 Servo g_servo;
 MotionSensor sensor = MotionSensor(12345);
 BTSerial logger = BTSerial();
-CalibrationStorage eeprom = CalibrationStorage(&logger);
+ConfigurationStorage eeprom = ConfigurationStorage(&logger);
 Button button = Button(BUTTON_PIN, LOW);
 RideController ride = RideController(&sensor, &g_servo, &logger);
-CalibBlob calibration;
+ConfigBlob config;
 
 static void shutdownPeripherals() {
   g_servo.detach();
@@ -48,13 +48,29 @@ void handleSleepOnShortPress(ButtonEvent ev) {
 void handleDevModeOnLongPress(ButtonEvent ev) {
   if (ev != BUTTON_LONG) return;
 
-  calibration = eeprom.loadCalibration();
-  calibration.devModeEnabled = !calibration.devModeEnabled;
-  eeprom.saveCalibration(calibration);
+  config = eeprom.loadCalibration();
+  config.devModeEnabled = !config.devModeEnabled;
+  eeprom.saveCalibration(config);
 
-  String sMode = (calibration.devModeEnabled) ? "ON" : "OFF";
+  String sMode = (config.devModeEnabled) ? "ON" : "OFF";
 
   logger.printf("Toggle dev mode: %s\n", sMode);
+}
+
+void handleSerialCMD(String& cmd) {
+  cmd.trim();
+
+  if (cmd.isEmpty()) return;
+  if (cmd == "ping") logger.println("pong");
+  if (cmd == "set") logger.println("OK");
+
+  if (cmd == "config") {
+    logger.printf("CONFIG: offset=%.2f yaw=%.3f devMode=%d gain=%.3f gearOffset=%.3f leanEnter=%.3f leanExit=%.3f\n",
+                        config.rollDegOffset, config.yawBias, (int)config.devModeEnabled, 
+                        config.gain, config.gearOffset, config.leanEnterDeg, config.leanExitDeg);
+  } 
+
+  if (cmd == "help") logger.println("ping set config");
 }
 
 void setup() {
@@ -63,9 +79,9 @@ void setup() {
   delay(100);
   
   sensor.init(I2C_SDA, I2C_SCL);
-  calibration = eeprom.loadCalibration();
+  config = eeprom.loadCalibration();
 
-  if (calibration.devModeEnabled) {
+  if (config.devModeEnabled) {
     logger.begin(BT_NAME);
   }
 
@@ -79,10 +95,7 @@ void loop() {
   // Eingabe testen
   if (logger.available()) {
     String cmd = logger.readStringUntil('\n');
-    cmd.trim();
-    if (cmd == "ping") logger.println("pong");
-    if (cmd == "set") logger.println("OK");
-    if (cmd == "help") logger.println("ping set");
+    handleSerialCMD(cmd);
   }
 
   ButtonEvent ev = button.checkEvent();

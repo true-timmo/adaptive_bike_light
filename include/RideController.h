@@ -41,7 +41,7 @@ class RideController {
         static constexpr float K_YAW_SNAP = 0.10f;
         static constexpr float SNAP_SPEED_MULT = 2.0f;
 
-        static constexpr float LEAN_ENTER_DEG   = 3.0f;  // ab diesem gefilterten Rollwinkel: "Kurve"
+        static constexpr float LEAN_ENTER_DEG   = 2.5f;  // ab diesem gefilterten Rollwinkel: "Kurve"
         static constexpr float LEAN_EXIT_DEG    = 2.0f;  // darunter zurück zu "Gerade"
         static constexpr uint32_t ENTER_HOLD_MS = 140;   // Mindestdauer für Eintritt
         static constexpr uint32_t EXIT_HOLD_MS  = 400;   // Mindestdauer für Austritt
