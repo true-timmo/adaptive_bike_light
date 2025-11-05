@@ -136,8 +136,8 @@ class RideController {
                 if (enoughDuration && enoughEnergy && (strongPeak || strongJerk)) {
                     snapHoldUntil = currentTimestamp + SNAP_HOLD_MS;
                     lastSnapAt    = currentTimestamp;
-                    logger->printf("%u: SNAP peak=%.1f E=%.1f dur=%ums jerk=%.0f\n",
-                                   currentTimestamp, peakYawMag, yawEnergyDeg, phaseDur, jerk);
+                    logger->printf("SNAP peak=%.1f E=%.1f dur=%ums jerk=%.0f\n",
+                                   peakYawMag, yawEnergyDeg, phaseDur, jerk);
                 }
 
                 // neue Phase initialisieren
@@ -171,11 +171,10 @@ class RideController {
 
             if (devZ > SHOCK_THR_Z  && currentTimestamp > shockHoldUntil) {
                 shockHoldUntil = currentTimestamp + SHOCK_HOLD_MS;
-                logger->printf("%d: Shock detected! Force = %f\n", currentTimestamp, devZ);
+                logger->printf("Shock detected! FORCE: %f\n", devZ);
             }
 
             if (currentTimestamp < shockHoldUntil) {
-                turnNeutral();
                 return true;
             }
 
@@ -237,11 +236,12 @@ class RideController {
         };
 
         void turnNeutral() {
+            logger->println("Turn neutral");
             writeServoAngle(neutralAngle());
         }
 
         void handleCurve(MotionData motionData) {
-            if (shockDetected(&motionData.accel)) return;
+            const bool inShock = shockDetected(&motionData.accel);
 
             float rollDeg = motionData.roll - rollDegOffset;
             bool snapBoost = snapBoostActive(motionData.yaw);
@@ -264,6 +264,8 @@ class RideController {
             case RideState::STRAIGHT:
                 if (absLean >= leanEnterDyn || yawMag >= 20.0f) {
                     if (currentTimestamp - stateTimerStart >= ENTER_HOLD_MS) {
+                        const char* signStr = (rollDegFiltered < 0.0f) ? "-" : "+";
+                        logger->printf("Init Curve (%s) at LEAN: %f°, YAW: %f°\n", signStr, absLean, yawMag);
                         state = RideState::CURVE;
                         stateTimerStart = currentTimestamp;
                     }
@@ -298,7 +300,9 @@ class RideController {
                 // Yaw-Gewichtung wird klein, wenn Roll schon groß ist:
                 float rollFrac = fminf(fabsf(rollDegFiltered) / ROLL_NORM, 1.0f); // 0..1
                 float yawWeight = (1.0f - rollFrac) * yawFrac;                    // groß: kleiner Roll + große Yaw
-                float blended = rollDegFiltered + (K_YAW * yawWeight) * yawRate;
+                float blended = (inShock) 
+                            ? (K_YAW * 1.2f) * yawRate 
+                            : rollDegFiltered + (K_YAW * yawWeight) * yawRate;
 
                 float cmd = neutralAngle() + SERVO::GAIN * blended;
                 if (fabsf(cmd - neutralAngle()) < OUTPUT_DEADBAND_DEG)
