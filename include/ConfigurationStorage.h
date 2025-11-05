@@ -4,10 +4,10 @@
 
 struct ConfigBlob {
     uint32_t magic = 0xC0FFEE21;
-    uint16_t version = 3;
+    uint8_t  version = 3;
     float    rollDegOffset = 0.0f;
     float    yawBias = 0.0f;
-    bool     devModeEnabled = false;
+    bool     devModeEnabled = true;
     float    gearOffset = -7.0f;
     float    gain = -5.5f;
     float    leanEnterDeg = 2.5f;
@@ -19,6 +19,7 @@ struct ConfigBlob {
 class ConfigurationStorage {
     private:
         static constexpr int EEPROM_ADDR = 0;
+        static constexpr uint8_t BLOB_VERSION = 3;
 
         Stream *logger;
         bool initialized = false;
@@ -59,7 +60,7 @@ class ConfigurationStorage {
             logger->println("EEPROM: load calibration");
             ConfigBlob blob{};
             EEPROM.get(0, blob);
-            bool ok = (blob.magic == 0xC0FFEE21) && (blob.version == 2);
+            bool ok = (blob.magic == 0xC0FFEE21) && (blob.version == BLOB_VERSION);
             if (ok) {
                 uint16_t expectedCrc = crcConfig(blob);
                 ok = (expectedCrc == blob.crc);
