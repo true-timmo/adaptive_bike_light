@@ -19,7 +19,7 @@ struct SERVO {
   static constexpr float MECHANICAL_OFFSET  = -7.0f;
   static constexpr float MIN_DEG            = 30.0f;
   static constexpr float MAX_DEG            = 150.0f;
-  static constexpr float GAIN               = -5.5f;
+  static constexpr float GAIN               = -6.0f;
   static constexpr float WRITE_DEADBAND_DEG = 0.2f;
 };
 
@@ -41,7 +41,7 @@ class RideController {
         static constexpr float K_YAW_SNAP = 0.10f;
         static constexpr float SNAP_SPEED_MULT = 2.0f;
 
-        static constexpr float LEAN_ENTER_DEG   = 2.5f;  // ab diesem gefilterten Rollwinkel: "Kurve"
+        static constexpr float LEAN_ENTER_DEG   = 3.0f;  // ab diesem gefilterten Rollwinkel: "Kurve"
         static constexpr float LEAN_EXIT_DEG    = 2.0f;  // darunter zurück zu "Gerade"
         static constexpr uint32_t ENTER_HOLD_MS = 140;   // Mindestdauer für Eintritt
         static constexpr uint32_t EXIT_HOLD_MS  = 400;   // Mindestdauer für Austritt
@@ -166,7 +166,7 @@ class RideController {
             const bool inShock = shockDetected(&motionData.accel);
 
             float rollDeg = motionData.roll - rollDegOffset;
-            bool snapBoost = snap.snapDetected(motionData.yaw);
+            bool snapBoost = !inShock && snap.snapDetected(motionData.yaw);
             float yawRate = motionData.yaw * (snapBoost ? (1.0f + K_YAW_SNAP) : 1.0f);
             float stepMultiplier = snapBoost ? SNAP_SPEED_MULT : 1.0f;
 

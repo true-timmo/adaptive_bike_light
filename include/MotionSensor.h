@@ -11,10 +11,12 @@ struct Accel {
     float x;
     float y;
     float z;
+    float roll;
     bool valid = false;
 
     Accel() {}
     Accel(float x_, float y_, float z_) : x(x_), y(y_), z(z_) { valid = true; }
+    Accel(float x_, float y_, float z_, float _roll) : x(x_), y(y_), z(z_), roll(_roll) { valid = true; }
 };
 
 struct MotionData {
@@ -30,11 +32,12 @@ struct MotionData {
 
 class MotionSensor {
   private:
-    static constexpr float ROLL_ALPHA = 0.98f;
     static constexpr float ROLL_SIGN = 1.0f;
-    float roll = 0.0f;
+    float gyroRoll = 0.0f;
+    bool gyroRollReset = false;
     unsigned long tPrev = 0;
     float yawBias = 0.0f;
+    float rollOffset = 0.0f;
     Adafruit_MPU6050 g_sensor;
 
   public:
@@ -76,21 +79,13 @@ class MotionSensor {
             if (data.valid) { sum += data.roll; n++; }
             delay(5);
         }
+        rollOffset = (n > 0) ? (float)(sum / (double)n) : 0.0f;
 
-        return (n > 0) ? (float)(sum / (double)n) : 0.0f;
+        return rollOffset;
     };
 
-    Accel readAccel() {
-        sensors_event_t a, g, t;
-        g_sensor.getEvent(&a, &g, &t);
-
-        if (!isfinite(a.acceleration.x) ||
-            !isfinite(a.acceleration.y) ||
-            !isfinite(a.acceleration.z)) {
-            return Accel();
-        }
-
-        return Accel(a.acceleration.x, a.acceleration.y, a.acceleration.z);
+    void resetGyroRoll() {
+        gyroRollReset = false;
     }
 
     MotionData readMotionData() {
@@ -100,22 +95,26 @@ class MotionSensor {
         float ax = a.acceleration.x;
         float ay = a.acceleration.y;
         float az = a.acceleration.z;
-        float gyroX = g.gyro.x * 180.0f / M_PI;
-        float gyroZ = g.gyro.z * 180.0f / M_PI - yawBias;
+        float roll = g.gyro.x * 180.0f / M_PI;
+        float yaw = g.gyro.z * 180.0f / M_PI - yawBias;
 
-        if (!isfinite(ax) || !isfinite(ay) || !isfinite(az) || !isfinite(gyroX) || !isfinite(gyroZ))
+        if (!isfinite(ax) || !isfinite(ay) || !isfinite(az) || !isfinite(roll) || !isfinite(yaw))
             return MotionData();
 
         unsigned long now = micros();
         float dt = (tPrev == 0) ? 0.01f : (now - tPrev) / 1e6f;
         tPrev = now;
 
-        float rollAcc = atan2f(ROLL_SIGN * ay, az) * 180.0f / M_PI;
-        float rollGyro = (roll + gyroX * dt);
+        float accRoll = atan2f(ROLL_SIGN * ay, az) * 180.0f / M_PI - rollOffset;
 
-        roll = ROLL_ALPHA * rollGyro + (1.0f - ROLL_ALPHA) * rollAcc;
+        if (!gyroRollReset) {
+            gyroRoll = accRoll;
+            gyroRollReset = true;
+        } else {
+            gyroRoll += roll * dt;
+        }
 
-        return MotionData(roll, gyroZ, Accel(ax, ay, az));
+        return MotionData(gyroRoll, yaw, Accel(ax, ay, az, accRoll));
     }
 };
 #endif // MotionSensor_h
