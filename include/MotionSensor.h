@@ -95,10 +95,10 @@ class MotionSensor {
         float ax = a.acceleration.x;
         float ay = a.acceleration.y;
         float az = a.acceleration.z;
-        float roll = g.gyro.x * 180.0f / M_PI;
-        float yaw = g.gyro.z * 180.0f / M_PI - yawBias;
+        float gRoll = g.gyro.x * 180.0f / M_PI;
+        float gYaw = g.gyro.z * 180.0f / M_PI - yawBias;
 
-        if (!isfinite(ax) || !isfinite(ay) || !isfinite(az) || !isfinite(roll) || !isfinite(yaw))
+        if (!isfinite(ax) || !isfinite(ay) || !isfinite(az) || !isfinite(gRoll) || !isfinite(gYaw))
             return MotionData();
 
         unsigned long now = micros();
@@ -107,14 +107,14 @@ class MotionSensor {
 
         float accRoll = atan2f(ROLL_SIGN * ay, az) * 180.0f / M_PI - rollOffset;
 
-        if (!gyroRollReset) {
+        if (!gyroRollReset || fabsf(gRoll) < 0.2f) {
             gyroRoll = accRoll;
             gyroRollReset = true;
         } else {
-            gyroRoll += roll * dt;
+            gyroRoll += gRoll * dt;
         }
 
-        return MotionData(gyroRoll, yaw, Accel(ax, ay, az, accRoll));
+        return MotionData(gyroRoll, gYaw, Accel(ax, ay, az, accRoll));
     }
 };
 #endif // MotionSensor_h
