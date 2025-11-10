@@ -34,7 +34,7 @@ class MotionSensor {
   private:
     static constexpr float SIGN_X = 1.0f;
     static constexpr float SIGN_Y = 1.0f;
-    static constexpr float SIGN_Z = -1.0f;
+    static constexpr float SIGN_Z = 1.0f;
 
     float gyroRoll = 0.0f;
     bool gyroRollReset = false;
