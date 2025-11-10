@@ -163,10 +163,10 @@ class RideController {
         }
 
         void handleCurve(MotionData motionData) {
-            const bool inShock = shockDetected(&motionData.accel);
+            if (shockDetected(&motionData.accel)) return;
 
             float rollDeg = motionData.roll - rollDegOffset;
-            bool snapBoost = !inShock && snap.snapDetected(motionData.yaw);
+            bool snapBoost = snap.snapDetected(motionData.yaw);
             float yawRate = motionData.yaw * (snapBoost ? (1.0f + K_YAW_SNAP) : 1.0f);
             float stepMultiplier = snapBoost ? SNAP_SPEED_MULT : 1.0f;
 
@@ -222,9 +222,7 @@ class RideController {
                 // Yaw-Gewichtung wird klein, wenn Roll schon groß ist:
                 float rollFrac = fminf(fabsf(rollDegFiltered) / ROLL_NORM, 1.0f); // 0..1
                 float yawWeight = (1.0f - rollFrac) * yawFrac;                    // groß: kleiner Roll + große Yaw
-                float blended = (inShock) 
-                            ? (K_YAW * 1.2f) * yawRate 
-                            : rollDegFiltered + (K_YAW * yawWeight) * yawRate;
+                float blended = rollDegFiltered + (K_YAW * yawWeight) * yawRate;
 
                 float cmd = neutralAngle() + SERVO::GAIN * blended;
                 if (fabsf(cmd - neutralAngle()) < OUTPUT_DEADBAND_DEG)

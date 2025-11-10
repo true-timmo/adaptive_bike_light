@@ -107,11 +107,12 @@ class MotionSensor {
 
         float accRoll = atan2f(ROLL_SIGN * ay, az) * 180.0f / M_PI - rollOffset;
 
+        const float alpha = 0.98f;
         if (!gyroRollReset || fabsf(gRoll) < 0.2f) {
             gyroRoll = accRoll;
             gyroRollReset = true;
         } else {
-            gyroRoll += gRoll * dt;
+            gyroRoll = alpha * (gyroRoll + gRoll * dt) + (1.0f - alpha) * accRoll;
         }
 
         return MotionData(gyroRoll, gYaw, Accel(ax, ay, az, accRoll));
