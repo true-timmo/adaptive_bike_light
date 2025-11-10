@@ -17,8 +17,8 @@ struct SERVO {
   static constexpr float MAX_SPEED_DPS      = 360.0f;
   static constexpr float NEUTRAL_DEG        = 90.0f;
   static constexpr float MECHANICAL_OFFSET  = -7.0f;
-  static constexpr float MIN_DEG            = 30.0f;
-  static constexpr float MAX_DEG            = 150.0f;
+  static constexpr float MIN_DEG            = 10.0f;
+  static constexpr float MAX_DEG            = 170.0f;
   static constexpr float GAIN               = -6.0f;
   static constexpr float WRITE_DEADBAND_DEG = 0.2f;
 };
@@ -79,6 +79,17 @@ class RideController {
             }
         };
 
+        void logEverything(float yawRaw, float yawFilt, float rollAcc, float rollGyro, float rollFused, float alpha, float servoPos, float ax, float ay, float az) {
+            static uint32_t lastLogMs = currentTimestamp;
+
+            if (currentTimestamp - lastLogMs >= 20) {
+                lastLogMs = currentTimestamp;
+                logger->printf("%u,%.3f,%.1f,%.1f,%.2f,%.2f,%.2f,%d,%.2f,%.1f,%.2f,%.2f,%.2f\n",
+                currentTimestamp, lastToCurrent, yawRaw, yawFilt, rollAcc, rollGyro, rollFused,
+                    (int)state, alpha, servoPos, ax, ay, az);
+            }
+        };
+
         bool shockDetected(Accel *accel) {
             if (!accel->valid) return false;
 
@@ -88,7 +99,6 @@ class RideController {
 
             if (devZ > SHOCK_THR_Z  && currentTimestamp > shockHoldUntil) {
                 shockHoldUntil = currentTimestamp + SHOCK_HOLD_MS;
-                logger->printf("Shock detected! FORCE: %f\n", devZ);
             }
 
             if (currentTimestamp < shockHoldUntil) {
@@ -162,6 +172,16 @@ class RideController {
             writeServoAngle(neutralAngle());
         }
 
+        void turnRight() {
+            logger->println("Turn right");
+            servo->write(minAngle());
+        }
+
+        void turnLeft() {
+            logger->println("Turn left");
+            servo->write(maxAngle());
+        }
+
         void handleCurve(MotionData motionData) {
             if (shockDetected(&motionData.accel)) return;
 
@@ -187,7 +207,6 @@ class RideController {
                 if (absLean >= leanEnterDyn || yawMag >= 20.0f) {
                     if (currentTimestamp - stateTimerStart >= ENTER_HOLD_MS) {
                         const char* signStr = (rollDegFiltered < 0.0f) ? "-" : "+";
-                        logger->printf("Init Curve (%s) at LEAN: %f°, YAW: %f°\n", signStr, absLean, yawMag);
                         state = RideState::CURVE;
                         stateTimerStart = currentTimestamp;
                     }
@@ -230,6 +249,11 @@ class RideController {
 
                 targetDeg = clampf(cmd, minAngle(), maxAngle());
             }
+
+            logEverything(motionData.yaw, yawRate, 
+                motionData.accel.roll, motionData.roll, 
+                rollDegFiltered, alpha, 
+                targetDeg, motionData.accel.x, motionData.accel.y, motionData.accel.z);
 
             writeServoAngle(targetDeg, stepMultiplier);
         }

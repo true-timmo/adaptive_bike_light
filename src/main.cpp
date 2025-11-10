@@ -61,8 +61,9 @@ void handleSerialCMD(String& cmd) {
   cmd.trim();
 
   if (cmd.isEmpty()) return;
-  if (cmd == "ping") logger.println("pong");
-  if (cmd == "set") logger.println("OK");
+  if (cmd == "n") ride.turnNeutral();
+  if (cmd == "r") ride.turnRight();
+  if (cmd == "l") ride.turnLeft();
 
   if (cmd == "config") {
     logger.printf("CONFIG: offset=%.2f yaw=%.3f devMode=%d gain=%.3f gearOffset=%.3f leanEnter=%.3f leanExit=%.3f\n",

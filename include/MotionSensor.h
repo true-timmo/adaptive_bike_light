@@ -32,11 +32,15 @@ struct MotionData {
 
 class MotionSensor {
   private:
-    static constexpr float ROLL_SIGN = 1.0f;
+    static constexpr float SIGN_X = 1.0f;
+    static constexpr float SIGN_Y = 1.0f;
+    static constexpr float SIGN_Z = -1.0f;
+
     float gyroRoll = 0.0f;
     bool gyroRollReset = false;
     unsigned long tPrev = 0;
     float yawBias = 0.0f;
+    float rollBias = 0.0f;
     float rollOffset = 0.0f;
     Adafruit_MPU6050 g_sensor;
 
@@ -56,16 +60,37 @@ class MotionSensor {
     }
 
     float calibrateGyroBias(uint16_t samples = 200, uint16_t delayMs = 5) {
-        float sum = 0.0f;
+        float sumYaw = 0.0f;
+        float sumRoll = 0.0f;
+        uint16_t used = 0;
+
+        delay(150);
 
         for (uint16_t i = 0; i < samples; i++) {
             sensors_event_t a, g, t;
             g_sensor.getEvent(&a, &g, &t);
-            sum += g.gyro.z * 180.0f / M_PI;
+
+            float gx = g.gyro.x * 180.0f / M_PI * SIGN_X;
+            float gz = g.gyro.z * 180.0f / M_PI * SIGN_Z;
+
+            if (fabsf(gx) > 2.0f || fabsf(gz) > 2.0f) {
+                delay(delayMs);
+                continue;
+            }
+
+            sumRoll += gx;
+            sumYaw  += gz;
+            used++;
             delay(delayMs);
         }
-        yawBias = sum / samples;
+        if (used == 0) {
+            return yawBias;
+        }
+        rollBias = sumRoll / used;
+        yawBias  = sumYaw  / used;
 
+        gyroRollReset = false;
+        tPrev = 0;
         return yawBias;
     }
 
@@ -95,7 +120,7 @@ class MotionSensor {
         float ax = a.acceleration.x;
         float ay = a.acceleration.y;
         float az = a.acceleration.z;
-        float gRoll = g.gyro.x * 180.0f / M_PI;
+        float gRoll = g.gyro.x * 180.0f / M_PI - rollBias;
         float gYaw = g.gyro.z * 180.0f / M_PI - yawBias;
 
         if (!isfinite(ax) || !isfinite(ay) || !isfinite(az) || !isfinite(gRoll) || !isfinite(gYaw))
@@ -105,7 +130,7 @@ class MotionSensor {
         float dt = (tPrev == 0) ? 0.01f : (now - tPrev) / 1e6f;
         tPrev = now;
 
-        float accRoll = atan2f(ROLL_SIGN * ay, az) * 180.0f / M_PI - rollOffset;
+        float accRoll = atan2f(SIGN_X * ay, az) * 180.0f / M_PI - rollOffset;
 
         const float alpha = 0.98f;
         if (!gyroRollReset || fabsf(gRoll) < 0.2f) {

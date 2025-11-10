@@ -64,10 +64,8 @@ class SnapDetector {
                 bool strongJerk     = (jerk       >= YAW_SNAP_JERK_THR);
 
                 if (enoughDuration && enoughEnergy && (strongPeak || strongJerk)) {
-                snapHoldUntil = now + SNAP_HOLD_MS;
-                lastSnapAt    = now;
-                if (logger) logger->printf("SNAP peak=%.1f E=%.1f dur=%ums jerk=%.0f\n",
-                                            peakYawMag, yawEnergyDeg, phaseDur, jerk);
+                    snapHoldUntil = now + SNAP_HOLD_MS;
+                    lastSnapAt    = now;
                 }
 
                 // neue Phase starten (mit aktuellem Signum, NICHT 0)
