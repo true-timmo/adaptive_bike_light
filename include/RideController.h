@@ -27,8 +27,10 @@ enum class RideState { STRAIGHT, CURVE };
 
 class RideController {
     private:
-        static constexpr float SHOCK_THR_ROLL = 14.0f;
-        static constexpr float SHOCK_THR_YAW  = 20.0f;
+        static constexpr float SHOCK_CAP_ROLL  = 18.6f;
+        static constexpr float SHOCK_CAP_YAW   = 42.9f;
+        static constexpr float SHOCK_THR_ROLL  = 7.6f;
+        static constexpr float SHOCK_THR_YAW   = 5.3f;
 
         // Gyro-Assist Einstellungen
         static constexpr float YAW_NORM   = 80.0f;   // °/s für volle Yaw-Gewichtung
@@ -87,13 +89,13 @@ class RideController {
         bool shockDetected(MotionData &motionData) {
             if (!motionData.valid) return false;
 
+            const bool shockByCap = motionData.gyroYaw > SHOCK_CAP_YAW || motionData.accel.rollDeg > SHOCK_CAP_ROLL;
             const float absRollDiff = fabsf(motionData.accel.rollDeg - lastMotionData.accel.rollDeg);
             const float absYawDiff = fabsf(motionData.gyroYaw - lastMotionData.gyroYaw);
 
-            logger->printf("%.2f|%.2f|%.2f|%.2f\n", motionData.accel.rollDeg, motionData.gyroYaw, absRollDiff, absYawDiff);
-
             lastMotionData = motionData;
             if (absRollDiff > SHOCK_THR_ROLL || absYawDiff > SHOCK_THR_YAW) {
+                logger->printf("SHOCK: %.2f|%.2f|%.2f|%.2f\n", motionData.accel.rollDeg, motionData.gyroYaw, absRollDiff, absYawDiff);
                 return true;
             }
 
@@ -179,7 +181,7 @@ class RideController {
             if (shockDetected(motionData)) return;
 
             float rollDeg = motionData.accel.rollDeg;
-            bool snapBoost = snap.snapDetected(motionData.gyroYaw);
+            bool snapBoost = snap.snapDetected(motionData);
             float yawRate = motionData.gyroYaw * (snapBoost ? (1.0f + K_YAW_SNAP) : 1.0f);
             float stepMultiplier = snapBoost ? SNAP_SPEED_MULT : 1.0f;
 

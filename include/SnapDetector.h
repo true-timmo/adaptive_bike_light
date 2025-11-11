@@ -13,6 +13,10 @@ class SnapDetector {
         static constexpr uint32_t SNAP_HOLD_MS          = 150;    // Boost-Dauer
         static constexpr float    YAW_EPS               = 2.5f;   // Deadzone um 0°/s
 
+        static constexpr float GHOST_THR_ROLL  = 0.28f;
+        static constexpr float GHOST_THR_YAW   = 0.23f;
+
+        MotionData lastMotionData;
         float    prevYawRate   = 0.0f;
         int      lastNonZeroSign = 0;
         float    peakYawMag    = 0.0f;
@@ -29,8 +33,18 @@ class SnapDetector {
         SnapDetector(Stream* l, uint32_t& currentTimestamp, float& lastToCurrent)
         : now(currentTimestamp), dtRef(lastToCurrent), logger(l) {}
 
-        bool snapDetected(float yawRate) {
-            // 0) Refractory
+        bool snapDetected(MotionData& motionData) {
+            if (!motionData.valid) return false;
+
+            const float yawRate = motionData.gyroYaw;
+            const float absRollDiff = fabsf(motionData.accel.rollDeg - lastMotionData.accel.rollDeg);
+            const float absYawDiff = fabsf(motionData.gyroYaw - lastMotionData.gyroYaw);
+
+            lastMotionData = motionData;
+            if (absRollDiff < GHOST_THR_ROLL || absYawDiff < GHOST_THR_YAW) {
+                return false;
+            }
+            
             if (now - lastSnapAt < SNAP_REFRACTORY_MS) {
                 prevYawRate = yawRate;
                 return (now < snapHoldUntil);
