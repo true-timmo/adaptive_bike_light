@@ -1,6 +1,6 @@
 #pragma once
 #include <Arduino.h>
-#include "SnapDetector.h"
+#include "MotionFilter.h"
 
 #ifndef ESP32_Servo_h
 #include <ESP32Servo.h>
@@ -52,7 +52,7 @@ class RideController {
         MotionSensor *sensor;
         Servo *servo;
         RideState state = RideState::STRAIGHT;
-        SnapDetector snap;
+        MotionFilter filter;
 
         MotionData lastMotionData;
         float rollDegFiltered     = 0.0f;
@@ -124,7 +124,7 @@ class RideController {
             sensor(s),
             servo(v),
             logger(l),
-            snap(l, currentTimestamp, lastToCurrent),
+            filter(l, currentTimestamp, lastToCurrent),
             lastMotionData()
         {};
 
@@ -180,8 +180,9 @@ class RideController {
         void handleCurve(MotionData motionData) {
             if (shockDetected(motionData)) return;
 
+            filter.filterNoise(motionData);
             float rollDeg = motionData.accel.rollDeg;
-            bool snapBoost = snap.snapDetected(motionData);
+            bool snapBoost = false;
             float yawRate = motionData.gyroYaw * (snapBoost ? (1.0f + K_YAW_SNAP) : 1.0f);
             float stepMultiplier = snapBoost ? SNAP_SPEED_MULT : 1.0f;
 
@@ -201,7 +202,6 @@ class RideController {
             case RideState::STRAIGHT:
                 if (absLean >= leanEnterDyn || yawMag >= 20.0f) {
                     if (currentTimestamp - stateTimerStart >= ENTER_HOLD_MS) {
-                        const char* signStr = (rollDegFiltered < 0.0f) ? "-" : "+";
                         state = RideState::CURVE;
                         stateTimerStart = currentTimestamp;
                     }
@@ -222,19 +222,15 @@ class RideController {
                 break;
             }
 
-            // Zielwinkel: Roll dominiert bei großer Schräglage, Yaw hilft v. a. bei kleinem Roll ---
             float targetDeg;
             if (state == RideState::STRAIGHT) {
                 targetDeg = neutralAngle();
             } else {
-                // Yaw-Gewichtung wird klein, wenn Roll schon groß ist:
-                float rollFrac = fminf(fabsf(rollDegFiltered) / ROLL_NORM, 1.0f); // 0..1
-                float yawWeight = (1.0f - rollFrac) * yawFrac;                    // groß: kleiner Roll + große Yaw
+                // Zielwinkel: Roll dominiert bei großer Schräglage, Yaw hilft v. a. bei kleinem Roll ---
+                float rollFrac = fminf(fabsf(rollDegFiltered) / ROLL_NORM, 1.0f);
+                float yawWeight = (1.0f - rollFrac) * yawFrac;
                 float blended = rollDegFiltered + (K_YAW * yawWeight) * yawRate;
-
                 float cmd = neutralAngle() + SERVO::GAIN * blended;
-                if (fabsf(cmd - neutralAngle()) < OUTPUT_DEADBAND_DEG)
-                    cmd = neutralAngle();
 
                 targetDeg = clampf(cmd, minAngle(), maxAngle());
             }
