@@ -85,9 +85,7 @@ void setup() {
   if (config.devModeEnabled) {
     logger.begin(BT_NAME);
   }
-
-  MotionData calibrationData = ride.runCalibration();
-  ride.init(calibrationData);
+  ride.init();
 
   Serial.println("Starte Kurvenlicht-Regelung...");
 }

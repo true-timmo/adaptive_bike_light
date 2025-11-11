@@ -27,12 +27,8 @@ enum class RideState { STRAIGHT, CURVE };
 
 class RideController {
     private:
-        static constexpr bool AUTO_RECENTER_ENABLE    = true;
-        static constexpr float AUTO_RECENTER_RATE_DPS = 0.05f;
-
-        static constexpr float    G_MPS2          = 9.80665f; // m/s^2
-        static constexpr float    SHOCK_THR_Z     = 6.0f;
-        static constexpr uint32_t SHOCK_HOLD_MS   = 100;
+        static constexpr float SHOCK_THR_ROLL = 5.0f;
+        static constexpr float SHOCK_THR_YAW  = 20.0f;
 
         // Gyro-Assist Einstellungen
         static constexpr float YAW_NORM   = 80.0f;   // °/s für volle Yaw-Gewichtung
@@ -41,8 +37,8 @@ class RideController {
         static constexpr float K_YAW_SNAP = 0.10f;
         static constexpr float SNAP_SPEED_MULT = 2.0f;
 
-        static constexpr float LEAN_ENTER_DEG   = 3.0f;  // ab diesem gefilterten Rollwinkel: "Kurve"
-        static constexpr float LEAN_EXIT_DEG    = 2.0f;  // darunter zurück zu "Gerade"
+        static constexpr float LEAN_ENTER_DEG   = 2.0f;  // ab diesem gefilterten Rollwinkel: "Kurve"
+        static constexpr float LEAN_EXIT_DEG    = 1.0f;  // darunter zurück zu "Gerade"
         static constexpr uint32_t ENTER_HOLD_MS = 140;   // Mindestdauer für Eintritt
         static constexpr uint32_t EXIT_HOLD_MS  = 400;   // Mindestdauer für Austritt
 
@@ -56,9 +52,8 @@ class RideController {
         RideState state = RideState::STRAIGHT;
         SnapDetector snap;
 
-        float rollDegOffset       = 0.0f;
+        MotionData lastMotionData;
         float rollDegFiltered     = 0.0f;
-        float yawBias             = 0.0f;
         float currentServoAngle   = SERVO::NEUTRAL_DEG;
 
         uint32_t stateTimerStart  = 0;
@@ -79,29 +74,30 @@ class RideController {
             }
         };
 
-        void logEverything(float yawRaw, float yawFilt, float rollAcc, float rollGyro, float rollFused, float alpha, float servoPos, float ax, float ay, float az) {
+        void logEverything(float gyroYaw, float gyroRoll, float accRollDeg, float accRollFiltered, float yawFrac, float alpha, float servoPos, float ax, float ay, float az) {
             static uint32_t lastLogMs = currentTimestamp;
 
             if (currentTimestamp - lastLogMs >= 20) {
                 lastLogMs = currentTimestamp;
-                logger->printf("%u,%.3f,%.1f,%.1f,%.2f,%.2f,%.2f,%d,%.2f,%.1f,%.2f,%.2f,%.2f\n",
-                currentTimestamp, lastToCurrent, yawRaw, yawFilt, rollAcc, rollGyro, rollFused,
-                    (int)state, alpha, servoPos, ax, ay, az);
+                logger->printf("%+.2f|%+.2f|%+.2f|%+.2f|%+.2f|%+.2f|%+.1f|%+.2f|%+.2f|%+.2f\n",
+                gyroYaw, gyroRoll, accRollDeg, accRollFiltered, yawFrac, alpha, servoPos, ax, ay, az);
             }
         };
 
-        bool shockDetected(Accel *accel) {
-            if (!accel->valid) return false;
+        bool shockDetected(MotionData &motionData) {
+            if (!motionData.valid) return false;
+            if (!lastMotionData.valid) return false;
 
-            static float zAvg = G_MPS2;
-            zAvg += 0.2f * (accel->z - zAvg);
-            float devZ = fabsf(zAvg - G_MPS2);
+            static float absRollDiff = fabsf(motionData.accel.rollDeg - lastMotionData.accel.rollDeg);
+            static float absYawDiff = fabsf(motionData.gyroYaw - lastMotionData.gyroYaw);
+            static bool isRollShock = absRollDiff > SHOCK_THR_ROLL;
+            static bool isYawShock = absYawDiff > SHOCK_THR_YAW;
+            lastMotionData = motionData;
 
-            if (devZ > SHOCK_THR_Z  && currentTimestamp > shockHoldUntil) {
-                shockHoldUntil = currentTimestamp + SHOCK_HOLD_MS;
-            }
+            logger->printf("ROLL %.2f | YAW %.2f!\n", absRollDiff, absYawDiff);
 
-            if (currentTimestamp < shockHoldUntil) {
+            if (isRollShock || isYawShock) {
+                logger->printf("SHOCK DETECTED!\n");
                 return true;
             }
 
@@ -130,20 +126,21 @@ class RideController {
             sensor(s),
             servo(v),
             logger(l),
-            snap(l, currentTimestamp, lastToCurrent)
+            snap(l, currentTimestamp, lastToCurrent),
+            lastMotionData()
         {};
 
-        void init(MotionData calibrationData) {
-            rollDegOffset = calibrationData.roll;
-            yawBias = calibrationData.yaw;
-            
+        void init() {
             servo->setPeriodHertz(50);
             servo->attach(SERVO::PIN, SERVO::PWM_MIN, SERVO::PWM_MAX);
-            servo->write(minAngle());
+            runCalibration();
+
+            turnLeft();
             delay(500);
-            servo->write(maxAngle());
+            turnRight();
             delay(500);
-            servo->write(neutralAngle());
+            turnNeutral();
+            delay(500);
         }
 
         void setTiming() {
@@ -155,21 +152,21 @@ class RideController {
             lastTimestamp = currentTimestamp;
         }
 
-        MotionData runCalibration() {
+        void runCalibration() {
+            delay(300);
             logger->println("Calibrating roll angle...");
-            rollDegOffset = sensor->calibrateRollAngle();
+            float xOffset = sensor->calibrateRollAngle();
+            delay(150);
             logger->println(F("Calibrating Gyro-Bias..."));
-            yawBias = sensor->calibrateGyroBias();
+            float yawBias = sensor->calibrateGyroBias();
 
-            logger->printf("Calibration done. Roll-Offset = %.2f°, Gyro-Z-Bias: %.3f °/s\n", rollDegOffset, yawBias);
+            logger->printf("Calibration done. X-Offset = %.2f°, Gyro-Z-Bias: %.3f °/s\n", xOffset, yawBias);
             servo->write(neutralAngle());
-
-            return MotionData(rollDegOffset, yawBias);
         };
 
         void turnNeutral() {
             logger->println("Turn neutral");
-            writeServoAngle(neutralAngle());
+            servo->write(neutralAngle());
         }
 
         void turnRight() {
@@ -183,15 +180,15 @@ class RideController {
         }
 
         void handleCurve(MotionData motionData) {
-            if (shockDetected(&motionData.accel)) return;
+            if (shockDetected(motionData)) return;
 
-            float rollDeg = motionData.roll - rollDegOffset;
-            bool snapBoost = snap.snapDetected(motionData.yaw);
-            float yawRate = motionData.yaw * (snapBoost ? (1.0f + K_YAW_SNAP) : 1.0f);
+            float rollDeg = motionData.accel.rollDeg;
+            bool snapBoost = snap.snapDetected(motionData.gyroYaw);
+            float yawRate = motionData.gyroYaw * (snapBoost ? (1.0f + K_YAW_SNAP) : 1.0f);
             float stepMultiplier = snapBoost ? SNAP_SPEED_MULT : 1.0f;
 
             // Adaptive Glättung: je kleiner Yaw, desto stärkeres LPF (Gerade ruhiger) ---
-            float yawMag   = fabsf(motionData.yaw);
+            float yawMag   = fabsf(motionData.gyroYaw);
             float yawFrac  = fminf(yawMag / YAW_NORM, 1.0f);                   // 0..1
             float dynTau   = LPF_TAU_S * (1.0f + 0.6f * (1.0f - yawFrac));     // 0.25..0.4 s
             float alpha    = lastToCurrent / (dynTau + lastToCurrent);
@@ -231,12 +228,6 @@ class RideController {
             float targetDeg;
             if (state == RideState::STRAIGHT) {
                 targetDeg = neutralAngle();
-
-                if (AUTO_RECENTER_ENABLE) {
-                    float rec = AUTO_RECENTER_RATE_DPS * lastToCurrent;
-                    float err = rollDeg;
-                    if (fabsf(err) > 0.1f) rollDegOffset += (err > 0 ? +rec : -rec);
-                }
             } else {
                 // Yaw-Gewichtung wird klein, wenn Roll schon groß ist:
                 float rollFrac = fminf(fabsf(rollDegFiltered) / ROLL_NORM, 1.0f); // 0..1
@@ -250,10 +241,11 @@ class RideController {
                 targetDeg = clampf(cmd, minAngle(), maxAngle());
             }
 
-            logEverything(motionData.yaw, yawRate, 
-                motionData.accel.roll, motionData.roll, 
-                rollDegFiltered, alpha, 
-                targetDeg, motionData.accel.x, motionData.accel.y, motionData.accel.z);
+            // logEverything(
+            //     motionData.gyroYaw, motionData.gyroRoll, motionData.accel.rollDeg,
+            //     rollDegFiltered, yawFrac, alpha, targetDeg, 
+            //     motionData.accel.x, motionData.accel.y, motionData.accel.z
+            // );
 
             writeServoAngle(targetDeg, stepMultiplier);
         }
