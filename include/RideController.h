@@ -90,7 +90,7 @@ class RideController {
             const float absRollDiff = fabsf(motionData.accel.rollDeg - lastMotionData.accel.rollDeg);
             const float absYawDiff = fabsf(motionData.gyroYaw - lastMotionData.gyroYaw);
 
-            logger->printf("ROLL %.2f | YAW %.2f!\n", absRollDiff, absYawDiff);
+            logger->printf("%.2f|%.2f|%.2f|%.2f\n", motionData.accel.rollDeg, motionData.gyroYaw, absRollDiff, absYawDiff);
 
             lastMotionData = motionData;
             if (absRollDiff > SHOCK_THR_ROLL || absYawDiff > SHOCK_THR_YAW) {
