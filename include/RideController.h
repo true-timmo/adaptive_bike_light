@@ -27,7 +27,7 @@ enum class RideState { STRAIGHT, CURVE };
 
 class RideController {
     private:
-        static constexpr float SHOCK_THR_ROLL = 5.0f;
+        static constexpr float SHOCK_THR_ROLL = 14.0f;
         static constexpr float SHOCK_THR_YAW  = 20.0f;
 
         // Gyro-Assist Einstellungen
@@ -86,18 +86,14 @@ class RideController {
 
         bool shockDetected(MotionData &motionData) {
             if (!motionData.valid) return false;
-            if (!lastMotionData.valid) return false;
 
-            static float absRollDiff = fabsf(motionData.accel.rollDeg - lastMotionData.accel.rollDeg);
-            static float absYawDiff = fabsf(motionData.gyroYaw - lastMotionData.gyroYaw);
-            static bool isRollShock = absRollDiff > SHOCK_THR_ROLL;
-            static bool isYawShock = absYawDiff > SHOCK_THR_YAW;
-            lastMotionData = motionData;
+            const float absRollDiff = fabsf(motionData.accel.rollDeg - lastMotionData.accel.rollDeg);
+            const float absYawDiff = fabsf(motionData.gyroYaw - lastMotionData.gyroYaw);
 
             logger->printf("ROLL %.2f | YAW %.2f!\n", absRollDiff, absYawDiff);
 
-            if (isRollShock || isYawShock) {
-                logger->printf("SHOCK DETECTED!\n");
+            lastMotionData = motionData;
+            if (absRollDiff > SHOCK_THR_ROLL || absYawDiff > SHOCK_THR_YAW) {
                 return true;
             }
 
