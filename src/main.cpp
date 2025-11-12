@@ -64,8 +64,9 @@ void handleSerialCMD(String& cmd) {
   if (cmd == "n") ride.turnNeutral();
   if (cmd == "r") ride.turnRight();
   if (cmd == "l") ride.turnLeft();
+  if (cmd == "c") ride.runCalibration();
 
-  if (cmd == "config") {
+  if (cmd == "cfg") {
     logger.printf("CONFIG: offset=%.2f yaw=%.3f devMode=%d gain=%.3f gearOffset=%.3f leanEnter=%.3f leanExit=%.3f\n",
                         config.rollDegOffset, config.yawBias, (int)config.devModeEnabled, 
                         config.gain, config.gearOffset, config.leanEnterDeg, config.leanExitDeg);

@@ -27,17 +27,10 @@ enum class RideState { STRAIGHT, CURVE };
 
 class RideController {
     private:
-        static constexpr float SHOCK_CAP_ROLL  = 18.6f;
-        static constexpr float SHOCK_CAP_YAW   = 42.9f;
-        static constexpr float SHOCK_THR_ROLL  = 7.6f;
-        static constexpr float SHOCK_THR_YAW   = 5.3f;
-
         // Gyro-Assist Einstellungen
         static constexpr float YAW_NORM   = 80.0f;   // °/s für volle Yaw-Gewichtung
         static constexpr float ROLL_NORM  = 10.0f;   // °  für „Roll ist schon groß“
         static constexpr float K_YAW      = 0.07f;   // Basiseinfluss der Yaw-Rate (Feintuning)
-        static constexpr float K_YAW_SNAP = 0.10f;
-        static constexpr float SNAP_SPEED_MULT = 2.0f;
 
         static constexpr float LEAN_ENTER_DEG   = 2.0f;  // ab diesem gefilterten Rollwinkel: "Kurve"
         static constexpr float LEAN_EXIT_DEG    = 1.0f;  // darunter zurück zu "Gerade"
@@ -54,7 +47,6 @@ class RideController {
         RideState state = RideState::STRAIGHT;
         MotionFilter filter;
 
-        MotionData lastMotionData;
         float rollDegFiltered     = 0.0f;
         float currentServoAngle   = SERVO::NEUTRAL_DEG;
 
@@ -86,22 +78,6 @@ class RideController {
             }
         };
 
-        bool shockDetected(MotionData &motionData) {
-            if (!motionData.valid) return false;
-
-            const bool shockByCap = motionData.gyroYaw > SHOCK_CAP_YAW || motionData.accel.rollDeg > SHOCK_CAP_ROLL;
-            const float absRollDiff = fabsf(motionData.accel.rollDeg - lastMotionData.accel.rollDeg);
-            const float absYawDiff = fabsf(motionData.gyroYaw - lastMotionData.gyroYaw);
-
-            lastMotionData = motionData;
-            if (absRollDiff > SHOCK_THR_ROLL || absYawDiff > SHOCK_THR_YAW) {
-                logger->printf("SHOCK: %.2f|%.2f|%.2f|%.2f\n", motionData.accel.rollDeg, motionData.gyroYaw, absRollDiff, absYawDiff);
-                return true;
-            }
-
-            return false;
-        };
-
         static inline float clampf(float v, float lo, float hi) {
             return v < lo ? lo : (v > hi ? hi : v);
         };
@@ -124,8 +100,7 @@ class RideController {
             sensor(s),
             servo(v),
             logger(l),
-            filter(l, currentTimestamp, lastToCurrent),
-            lastMotionData()
+            filter(l, currentTimestamp, lastToCurrent)
         {};
 
         void init() {
@@ -151,15 +126,17 @@ class RideController {
         }
 
         void runCalibration() {
+            turnNeutral();
             delay(300);
             logger->println("Calibrating roll angle...");
-            float xOffset = sensor->calibrateRollAngle();
+            const Accel a = sensor->calibrateAccel();
             delay(150);
             logger->println(F("Calibrating Gyro-Bias..."));
-            float yawBias = sensor->calibrateGyroBias();
+            const MotionData g = sensor->calibrateGyro();
 
-            logger->printf("Calibration done. X-Offset = %.2f°, Gyro-Z-Bias: %.3f °/s\n", xOffset, yawBias);
-            servo->write(neutralAngle());
+            logger->println("Calibration done.");
+            logger->printf("X-Offset = %.2f°, Y-Offset = %.2f°, Z-Offset = %.2f°\n", a.x, a.y, a.z);
+            logger->printf("Gyro-X-Bias: %.3f °/s, Gyro-Z-Bias: %.3f °/s\n", g.gyroRoll, g.gyroYaw);
         };
 
         void turnNeutral() {
@@ -178,24 +155,27 @@ class RideController {
         }
 
         void handleCurve(MotionData motionData) {
-            if (shockDetected(motionData)) return;
+            filter.handle(motionData);
+            if (!motionData.valid) return;
 
-            filter.filterNoise(motionData);
             float rollDeg = motionData.accel.rollDeg;
-            bool snapBoost = false;
-            float yawRate = motionData.gyroYaw * (snapBoost ? (1.0f + K_YAW_SNAP) : 1.0f);
-            float stepMultiplier = snapBoost ? SNAP_SPEED_MULT : 1.0f;
+            float yawRate = motionData.gyroYaw;
 
             // Adaptive Glättung: je kleiner Yaw, desto stärkeres LPF (Gerade ruhiger) ---
             float yawMag   = fabsf(motionData.gyroYaw);
             float yawFrac  = fminf(yawMag / YAW_NORM, 1.0f);                   // 0..1
             float dynTau   = LPF_TAU_S * (1.0f + 0.6f * (1.0f - yawFrac));     // 0.25..0.4 s
             float alpha    = lastToCurrent / (dynTau + lastToCurrent);
+
             rollDegFiltered += alpha * (rollDeg - rollDegFiltered);
+            float rollFrac = fminf(fabsf(rollDegFiltered) / ROLL_NORM, 1.0f);
+            float yawWeight = (1.0f - rollFrac) * yawFrac;
+            float blended = rollDegFiltered + (K_YAW * yawWeight) * yawRate;
+            float targetDeg = neutralAngle() + SERVO::GAIN * blended;
 
             // Zustandserkennung (Hysterese) – Eintritt erleichtern, wenn Yaw groß ---
             float absLean = fabsf(rollDegFiltered);
-            float leanEnterDyn = LEAN_ENTER_DEG - 1.5f * yawFrac;              // bis ~1.5° leichter
+            float leanEnterDyn = LEAN_ENTER_DEG - 1.5f * yawFrac;
             if (leanEnterDyn < 1.0f) leanEnterDyn = 1.0f;
 
             switch (state) {
@@ -222,17 +202,10 @@ class RideController {
                 break;
             }
 
-            float targetDeg;
             if (state == RideState::STRAIGHT) {
                 targetDeg = neutralAngle();
-            } else {
-                // Zielwinkel: Roll dominiert bei großer Schräglage, Yaw hilft v. a. bei kleinem Roll ---
-                float rollFrac = fminf(fabsf(rollDegFiltered) / ROLL_NORM, 1.0f);
-                float yawWeight = (1.0f - rollFrac) * yawFrac;
-                float blended = rollDegFiltered + (K_YAW * yawWeight) * yawRate;
-                float cmd = neutralAngle() + SERVO::GAIN * blended;
-
-                targetDeg = clampf(cmd, minAngle(), maxAngle());
+            } else {             
+                targetDeg = clampf(targetDeg, minAngle(), maxAngle());
             }
 
             // logEverything(
@@ -241,6 +214,6 @@ class RideController {
             //     motionData.accel.x, motionData.accel.y, motionData.accel.z
             // );
 
-            writeServoAngle(targetDeg, stepMultiplier);
+            writeServoAngle(targetDeg);
         }
 };

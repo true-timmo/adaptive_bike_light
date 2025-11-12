@@ -63,7 +63,7 @@ class MotionSensor {
         g_sensor.setFilterBandwidth(MPU6050_BAND_21_HZ);
     }
 
-    float calibrateGyroBias(uint16_t samples = 200, uint16_t delayMs = 5) {
+    MotionData calibrateGyro(uint16_t samples = 200, uint16_t delayMs = 5) {
         float sumYaw = 0.0f;
         float sumRoll = 0.0f;
         uint16_t used = 0;
@@ -85,16 +85,15 @@ class MotionSensor {
             used++;
             delay(delayMs);
         }
-        if (used == 0) {
-            return yawBias;
+        if (used > 0) {
+            rollBias = sumRoll / used;
+            yawBias  = sumYaw  / used;
         }
-        rollBias = sumRoll / used;
-        yawBias  = sumYaw  / used;
 
-        return yawBias;
+        return MotionData(rollBias, yawBias);
     }
 
-    float calibrateRollAngle(uint32_t duration_ms = 2000) {
+    Accel calibrateAccel(uint32_t duration_ms = 2000) {
         uint32_t t0 = millis();
         uint32_t n  = 0;
         double sumX = 0.0;
@@ -117,7 +116,7 @@ class MotionSensor {
         yOffset = (n > 0) ? (float)(sumY / (double)n) : 0.0f;
         zOffset = (n > 0) ? (float)(sumZ / (double)n) : 0.0f;
 
-        return xOffset;
+        return Accel(xOffset, yOffset, zOffset);
     };
 
     MotionData readMotionData() {
