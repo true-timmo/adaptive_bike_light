@@ -41,15 +41,15 @@ class MotionFilter {
                 motionData.gyroRoll = lastMotionData.gyroRoll;
             }
 
-            if (absRollDiff > IQR_DIFF_ROLL) {
-                motionData.accel.rollDeg = (motionData.accel.rollDeg > lastMotionData.accel.rollDeg)
-                    ? lastMotionData.accel.rollDeg + IQR_DIFF_ROLL 
-                    : lastMotionData.accel.rollDeg - IQR_DIFF_ROLL;
-            }
+            // if (absRollDiff > IQR_DIFF_ROLL) {
+            //     motionData.accel.rollDeg = (motionData.accel.rollDeg > lastMotionData.accel.rollDeg)
+            //         ? lastMotionData.accel.rollDeg + IQR_DIFF_ROLL 
+            //         : lastMotionData.accel.rollDeg - IQR_DIFF_ROLL;
+            // }
 
-            if (absgyroYaw > IQR_CAP_YAW) {
-                motionData.gyroYaw = (motionData.gyroYaw > 0) ? IQR_CAP_YAW : IQR_CAP_YAW * -1.0f;
-            }
+            // if (absgyroYaw > IQR_CAP_YAW) {
+            //     motionData.gyroYaw = (motionData.gyroYaw > 0) ? IQR_CAP_YAW : IQR_CAP_YAW * -1.0f;
+            // }
         }
 
         bool handleShock(MotionData &motionData) {
