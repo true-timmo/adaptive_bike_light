@@ -25,7 +25,7 @@ class CurveDetector {
 
         void handle(MotionData& motionData) {
 
-            logger->printf("%+.2f|%+.2f|%+.2f|%+.1f|%+f\n", 
+            logger->printf("%+.2f|%+.2f|%+.2f|%+.1f|%+.0f\n", 
                 motionData.accel.rollDeg, motionData.gyroRoll, motionData.gyroYaw, currentServoAngle, getDirectionSign());
 
             lastServoAngle = currentServoAngle;
