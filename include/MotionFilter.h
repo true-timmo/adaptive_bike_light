@@ -61,9 +61,6 @@ class MotionFilter {
             if (!handleShock(motionData)) return;
 
             handleNoise(motionData);
-
-            logger->printf("%.2f|%.2f|%.2f|%d\n", motionData.accel.rollDeg, motionData.gyroRoll, motionData.gyroYaw, motionData.valid);
-
             lastMotionData = motionData;
         };
 };

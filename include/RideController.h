@@ -10,6 +10,10 @@
 #include "MotionSensor.h"
 #endif
 
+#ifndef CurveDetector_h
+#include "CurveDetector.h"
+#endif
+
 struct SERVO {
   static constexpr int PIN                  = 10;
   static constexpr int PWM_MIN              = 1000;
@@ -46,6 +50,7 @@ class RideController {
         Servo *servo;
         RideState state = RideState::STRAIGHT;
         MotionFilter filter;
+        CurveDetector detector;
 
         float rollDegFiltered     = 0.0f;
         float currentServoAngle   = SERVO::NEUTRAL_DEG;
@@ -100,7 +105,8 @@ class RideController {
             sensor(s),
             servo(v),
             logger(l),
-            filter(l, currentTimestamp, lastToCurrent)
+            filter(l, currentTimestamp, lastToCurrent),
+            detector(l, currentServoAngle, neutralAngle())
         {};
 
         void init() {
@@ -156,6 +162,7 @@ class RideController {
 
         void handleCurve(MotionData motionData) {
             filter.handle(motionData);
+            detector.handle(motionData);
             if (!motionData.valid) return;
 
             float rollDeg = motionData.accel.rollDeg;
