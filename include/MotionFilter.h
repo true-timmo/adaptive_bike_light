@@ -9,33 +9,46 @@
 
 class MotionFilter {
     private:
-        static constexpr float NOISE_THR_ROLL  = 0.28f;
-        static constexpr float NOISE_THR_YAW   = 0.23f;
+        static constexpr float NOISE_DIFF_ROLL  = 0.28f;
+        static constexpr float NOISE_DIFF_YAW   = 0.23f;
+
+        static constexpr float IQR_DIFF_ROLL = 1.82f;
+        static constexpr float IQR_CAP_YAW  = 12.7f;
 
         static constexpr float SHOCK_CAP_ROLL  = 18.6f;
         static constexpr float SHOCK_CAP_YAW   = 42.9f;
-        static constexpr float SHOCK_THR_ROLL  = 7.6f;
-        static constexpr float SHOCK_THR_YAW   = 5.3f;
+        static constexpr float SHOCK_DIFF_ROLL  = 7.6f;
+        static constexpr float SHOCK_DIFF_YAW   = 5.3f;
 
         MotionData lastMotionData;
-        float    prevYawRate   = 0.0f;
 
         uint32_t& now;
         float&    dtRef;
         Stream*   logger;
 
         void handleNoise(MotionData& motionData) {
-            const float yawRate = motionData.gyroYaw;
+            const float absgyroYaw = fabsf(motionData.gyroYaw);
+            const float absRollDeg = fabsf(motionData.accel.rollDeg);
             const float absRollDiff = fabsf(motionData.accel.rollDeg - lastMotionData.accel.rollDeg);
             const float absYawDiff = fabsf(motionData.gyroYaw - lastMotionData.gyroYaw);
 
-            if (absRollDiff < NOISE_THR_ROLL) {
+            if (absRollDiff < NOISE_DIFF_ROLL) {
                 motionData.accel = lastMotionData.accel;
             }
 
-            if (absYawDiff < NOISE_THR_YAW) {
+            if (absYawDiff < NOISE_DIFF_YAW) {
                 motionData.gyroYaw = lastMotionData.gyroYaw;
                 motionData.gyroRoll = lastMotionData.gyroRoll;
+            }
+
+            if (absRollDiff > IQR_DIFF_ROLL) {
+                motionData.accel.rollDeg = (motionData.accel.rollDeg > lastMotionData.accel.rollDeg)
+                    ? lastMotionData.accel.rollDeg + IQR_DIFF_ROLL 
+                    : lastMotionData.accel.rollDeg - IQR_DIFF_ROLL;
+            }
+
+            if (absgyroYaw > IQR_CAP_YAW) {
+                motionData.gyroYaw = (motionData.gyroYaw > 0) ? IQR_CAP_YAW : IQR_CAP_YAW * -1.0f;
             }
         }
 
@@ -44,7 +57,7 @@ class MotionFilter {
             const float absRollDiff = fabsf(motionData.accel.rollDeg - lastMotionData.accel.rollDeg);
             const float absYawDiff = fabsf(motionData.gyroYaw - lastMotionData.gyroYaw);
 
-            if (absRollDiff > SHOCK_THR_ROLL || absYawDiff > SHOCK_THR_YAW) {
+            if (absRollDiff > SHOCK_DIFF_ROLL || absYawDiff > SHOCK_DIFF_YAW) {
                 motionData.valid = false;
                 return false;
             }
