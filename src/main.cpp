@@ -57,22 +57,22 @@ void handleDevModeOnLongPress(ButtonEvent ev) {
   logger.printf("Toggle dev mode: %s\n", sMode);
 }
 
-void handleSerialCMD(String& cmd) {
+void handleSerialCMD(String cmd) {
   cmd.trim();
 
   if (cmd.isEmpty()) return;
-  if (cmd == "n") ride.turnNeutral();
-  if (cmd == "r") ride.turnRight();
-  if (cmd == "l") ride.turnLeft();
-  if (cmd == "c") ride.runCalibration();
+  if (cmd == F("help")) logger.println(F("ping set config")); return;
 
-  if (cmd == "cfg") {
+  if (cmd == F("r")) ride.turnRight(); return;
+  if (cmd == F("l")) ride.turnLeft(); return;
+  if (cmd == F("n")) ride.turnNeutral(); return;
+  if (cmd == F("c")) ride.runCalibration(); return;
+
+  if (cmd == F("cfg")) {
     logger.printf("CONFIG: offset=%.2f yaw=%.3f devMode=%d gain=%.3f gearOffset=%.3f leanEnter=%.3f leanExit=%.3f\n",
                         config.rollDegOffset, config.yawBias, (int)config.devModeEnabled, 
                         config.gain, config.gearOffset, config.leanEnterDeg, config.leanExitDeg);
   } 
-
-  if (cmd == "help") logger.println("ping set config");
 }
 
 void setup() {

@@ -20,11 +20,12 @@ class MotionFilter {
         static constexpr float SHOCK_DIFF_ROLL  = 7.6f;
         static constexpr float SHOCK_DIFF_YAW   = 5.3f;
 
-        MotionData lastMotionData;
-
         uint32_t& now;
         float&    dtRef;
+
         Stream*   logger;
+        MotionData lastMotionData{};
+        bool hasLast = false;
 
         void handleNoise(MotionData& motionData) {
             const float absgyroYaw = fabsf(motionData.gyroYaw);
@@ -40,16 +41,6 @@ class MotionFilter {
                 motionData.gyroYaw = lastMotionData.gyroYaw;
                 motionData.gyroRoll = lastMotionData.gyroRoll;
             }
-
-            // if (absRollDiff > IQR_DIFF_ROLL) {
-            //     motionData.accel.rollDeg = (motionData.accel.rollDeg > lastMotionData.accel.rollDeg)
-            //         ? lastMotionData.accel.rollDeg + IQR_DIFF_ROLL 
-            //         : lastMotionData.accel.rollDeg - IQR_DIFF_ROLL;
-            // }
-
-            // if (absgyroYaw > IQR_CAP_YAW) {
-            //     motionData.gyroYaw = (motionData.gyroYaw > 0) ? IQR_CAP_YAW : IQR_CAP_YAW * -1.0f;
-            // }
         }
 
         bool handleShock(MotionData &motionData) {
@@ -71,6 +62,7 @@ class MotionFilter {
 
         void handle(MotionData& motionData) {
             if (!motionData.valid) return;
+            if (!hasLast) lastMotionData = motionData; hasLast = true; return;
             if (!handleShock(motionData)) return;
 
             handleNoise(motionData);

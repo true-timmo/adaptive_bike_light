@@ -9,10 +9,12 @@
 
 class CurveDetector {
     private:
-        Stream *logger;
+        uint32_t& now;  
         float neutralAngle;
         float lastServoAngle;
-        float currentServoAngle;
+        float& currentServoAngle;
+
+        Stream *logger;
 
         float getDirectionSign() {
             if (currentServoAngle == neutralAngle) return 0.0f;
@@ -21,12 +23,16 @@ class CurveDetector {
         }
 
     public:
-        CurveDetector(Stream* l, float& csa, float na) :  logger(l), currentServoAngle(csa), neutralAngle(na) {}
+        CurveDetector(Stream* l,  uint32_t& currentTimestamp, float& csa, float na)
+            :  logger(l), now(currentTimestamp), currentServoAngle(csa), neutralAngle(na) {}
 
         void handle(MotionData& motionData) {
+            static uint32_t lastLogMs = now;
 
-            logger->printf("%+.2f|%+.2f|%+.2f|%+.1f|%+.0f\n", 
-                motionData.accel.rollDeg, motionData.gyroRoll, motionData.gyroYaw, currentServoAngle, getDirectionSign());
+            if (now - lastLogMs >= 20) {
+                logger->printf("%+.2f|%+.2f|%+.2f|%+.1f|%+.0f\n", 
+                    motionData.accel.rollDeg, motionData.gyroRoll, motionData.gyroYaw, currentServoAngle, getDirectionSign());
+                }
 
             lastServoAngle = currentServoAngle;
         };

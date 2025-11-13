@@ -33,8 +33,9 @@ struct MotionData {
 class MotionSensor {
   private:
     static constexpr float G_MPS2 = 9.80665f;
-    static constexpr float GYRO_THR_YAW = 0.6f;
-    static constexpr float GYRO_THR_ROLL = 0.31f;
+    static constexpr float GYRO_DEADZONE_YAW = 0.6f;
+    static constexpr float GYRO_DEADZONE_ROLL = 0.31f;
+    static constexpr float ACCEL_DEADZONE_ROLL = 0.05f;
 
     static constexpr float SIGN_X = 1.0f;
     static constexpr float SIGN_Y = 1.0f;
@@ -47,6 +48,10 @@ class MotionSensor {
     float yawBias = 0.0f;
     float rollBias = 0.0f;
     Adafruit_MPU6050 g_sensor;
+
+    inline float applyDeadzone(float v, float deadzone) {
+        return (fabs(v) < deadzone) ? 0.0f : v - copysign(deadzone, v);
+    }
 
   public:
     MotionSensor(int32_t id = -1) : g_sensor() {}
@@ -130,12 +135,13 @@ class MotionSensor {
         float gYaw = g.gyro.z * 180.0f / M_PI - yawBias;
 
         if (!isfinite(ax) || !isfinite(ay) || !isfinite(az) || !isfinite(gRoll) || !isfinite(gYaw))
-            return MotionData();
-
-        if (abs(gYaw) < GYRO_THR_YAW) gYaw = 0.0f;
-        if (abs(gRoll) < GYRO_THR_ROLL) gRoll = 0.0f;
+            return MotionData();   
 
         float accRollDeg = atan2f(SIGN_X * ay, az) * 180.0f / M_PI;
+
+        accRollDeg = applyDeadzone(accRollDeg, ACCEL_DEADZONE_ROLL);
+        gYaw = applyDeadzone(gYaw, GYRO_DEADZONE_YAW);
+        gRoll = applyDeadzone(gRoll, GYRO_DEADZONE_ROLL); 
 
         return MotionData(gRoll, gYaw, Accel(ax, ay, az, accRollDeg));
     }

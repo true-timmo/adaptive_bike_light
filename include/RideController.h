@@ -21,10 +21,10 @@ struct SERVO {
   static constexpr float MAX_SPEED_DPS      = 360.0f;
   static constexpr float NEUTRAL_DEG        = 90.0f;
   static constexpr float MECHANICAL_OFFSET  = -7.0f;
-  static constexpr float MIN_DEG            = 10.0f;
-  static constexpr float MAX_DEG            = 170.0f;
+  static constexpr float MIN_DEG            = 20.0f;
+  static constexpr float MAX_DEG            = 160.0f;
   static constexpr float GAIN               = -6.0f;
-  static constexpr float WRITE_DEADBAND_DEG = 0.2f;
+  static constexpr float WRITE_DEADBAND_DEG = 0.3f;
 };
 
 enum class RideState { STRAIGHT, CURVE };
@@ -32,12 +32,12 @@ enum class RideState { STRAIGHT, CURVE };
 class RideController {
     private:
         // Gyro-Assist Einstellungen
-        static constexpr float YAW_NORM   = 80.0f;   // °/s für volle Yaw-Gewichtung
+        static constexpr float YAW_NORM   = 40.0f;   // °/s für volle Yaw-Gewichtung
         static constexpr float ROLL_NORM  = 10.0f;   // °  für „Roll ist schon groß“
         static constexpr float K_YAW      = 0.07f;   // Basiseinfluss der Yaw-Rate (Feintuning)
 
-        static constexpr float LEAN_ENTER_DEG   = 2.0f;  // ab diesem gefilterten Rollwinkel: "Kurve"
-        static constexpr float LEAN_EXIT_DEG    = 1.0f;  // darunter zurück zu "Gerade"
+        static constexpr float LEAN_ENTER_DEG   = 1.5f;  // ab diesem gefilterten Rollwinkel: "Kurve"
+        static constexpr float LEAN_EXIT_DEG    = 0.5f;  // darunter zurück zu "Gerade"
         static constexpr uint32_t ENTER_HOLD_MS = 140;   // Mindestdauer für Eintritt
         static constexpr uint32_t EXIT_HOLD_MS  = 400;   // Mindestdauer für Austritt
 
@@ -106,7 +106,7 @@ class RideController {
             servo(v),
             logger(l),
             filter(l, currentTimestamp, lastToCurrent),
-            detector(l, currentServoAngle, neutralAngle())
+            detector(l, currentTimestamp, currentServoAngle, neutralAngle())
         {};
 
         void init() {
@@ -134,30 +134,33 @@ class RideController {
         void runCalibration() {
             turnNeutral();
             delay(300);
-            logger->println("Calibrating roll angle...");
+            logger->println(F("Calibrating roll angle..."));
             const Accel a = sensor->calibrateAccel();
             delay(150);
             logger->println(F("Calibrating Gyro-Bias..."));
             const MotionData g = sensor->calibrateGyro();
 
-            logger->println("Calibration done.");
+            logger->println(F("Calibration done."));
             logger->printf("X-Offset = %.2f°, Y-Offset = %.2f°, Z-Offset = %.2f°\n", a.x, a.y, a.z);
             logger->printf("Gyro-X-Bias: %.3f °/s, Gyro-Z-Bias: %.3f °/s\n", g.gyroRoll, g.gyroYaw);
         };
 
         void turnNeutral() {
-            logger->println("Turn neutral");
-            servo->write(neutralAngle());
+            logger->println(F("Turn neutral"));
+            currentServoAngle = neutralAngle();
+            servo->write(currentServoAngle);
         }
 
         void turnRight() {
-            logger->println("Turn right");
-            servo->write(minAngle());
+            logger->println(F("Turn right"));
+            currentServoAngle = minAngle();
+            servo->write(currentServoAngle);
         }
 
         void turnLeft() {
-            logger->println("Turn left");
-            servo->write(maxAngle());
+            logger->println(F("Turn left"));
+            currentServoAngle = maxAngle();
+            servo->write(currentServoAngle);
         }
 
         void handleCurve(MotionData motionData) {
