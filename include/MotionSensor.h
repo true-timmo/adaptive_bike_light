@@ -50,7 +50,7 @@ class MotionSensor {
     Adafruit_MPU6050 g_sensor;
 
     inline float applyDeadzone(float v, float deadzone) {
-        return (fabs(v) < deadzone) ? 0.0f : v - copysign(deadzone, v);
+        return (fabsf(v) < deadzone) ? 0.0f : v - copysign(deadzone, v);
     }
 
   public:

@@ -165,10 +165,10 @@ class RideController {
         }
 
         void handleCurve(MotionData motionData) {
-            filter.handle(motionData);
-            detector.handle(motionData);
-            if (!motionData.valid) return;
+            const bool validData = filter.handle(motionData);
+            if (!validData) return;
 
+            detector.handle(motionData);
             float rollDeg = motionData.accel.rollDeg;
             float yawRate = motionData.gyroYaw;
 
