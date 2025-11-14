@@ -109,13 +109,20 @@ class MotionSensor {
             sensors_event_t a, g, t;
             g_sensor.getEvent(&a, &g, &t);
 
-            if (isfinite(a.acceleration.x)) { 
-                sumX += a.acceleration.x;
-                sumY += a.acceleration.y; 
-                sumZ += a.acceleration.z; 
-                n++;
+            float ax = a.acceleration.x;
+            float ay = a.acceleration.y;
+            float az = a.acceleration.z;
+
+            float aNorm = sqrtf(ax*ax + ay*ay + az*az);
+            if (!isfinite(ax) || fabsf(aNorm - G_MPS2) > 0.8f) {
+                delay(5);
+                continue;
             }
-            delay(5);
+
+            sumX += ax;
+            sumY += ay; 
+            sumZ += az; 
+            n++;
         }
         xOffset = (n > 0) ? (float)(sumX / (double)n) : 0.0f;
         yOffset = (n > 0) ? (float)(sumY / (double)n) : 0.0f;

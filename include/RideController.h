@@ -134,7 +134,6 @@ class RideController {
         }
 
         void runCalibration() {
-            turnNeutral();
             delay(300);
             logger->println(F("Calibrating roll angle..."));
             const Accel a = sensor->calibrateAccel();

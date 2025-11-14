@@ -19,7 +19,28 @@ Button button = Button(BUTTON_PIN, LOW);
 RideController ride = RideController(&sensor, &g_servo, &logger);
 ConfigBlob config;
 
+enum CMD {
+  LEFT,
+  RIGHT,
+  NEUTRAL,
+  DUMP_CFG,
+  CALIBRATE,
+  HELP
+};
+
+static CMD resolveCMD(String cmd) {
+  if (cmd == F("r")) return CMD::RIGHT;
+  if (cmd == F("l")) return CMD::LEFT;
+  if (cmd == F("n")) return CMD::NEUTRAL;
+  if (cmd == F("c")) return CMD::CALIBRATE;
+  if (cmd == F("cfg")) return CMD::DUMP_CFG;
+
+  return CMD::HELP;
+}
+
 static void shutdownPeripherals() {
+  ride.turnNeutral();
+  delay(100);
   g_servo.detach();
 }
 
@@ -57,25 +78,38 @@ void handleDevModeOnLongPress(ButtonEvent ev) {
   logger.printf("Toggle dev mode: %s\n", sMode);
 }
 
-bool handleSerialCMD(String cmd) {
-  cmd.trim();
 
-  if (cmd.isEmpty()) return false;
-  if (cmd == F("help")) logger.println(F("ping set config")); return true;
 
-  if (cmd == F("r")) ride.turnRight(); return true;
-  if (cmd == F("l")) ride.turnLeft(); return true;
-  if (cmd == F("n")) ride.turnNeutral(); return true;
-  if (cmd == F("c")) ride.runCalibration(); return true;
+bool handleSerialCMD(String input) {
+  input.trim();
 
-  if (cmd == F("cfg")) {
-    logger.printf("CONFIG: offset=%.2f yaw=%.3f devMode=%d gain=%.3f gearOffset=%.3f leanEnter=%.3f leanExit=%.3f\n",
+  if (input.isEmpty()) return false;
+  CMD cmd = resolveCMD(input);
+
+  switch (cmd) {
+    case CMD::LEFT:
+      ride.turnLeft();
+      break;
+    case CMD::RIGHT:
+      ride.turnRight();
+      break;
+    case CMD::NEUTRAL:
+      ride.turnNeutral();
+      break;
+    case CMD::CALIBRATE:
+      ride.runCalibration();
+      break;
+    case CMD::DUMP_CFG:
+      logger.printf("CONFIG: offset=%.2f yaw=%.3f devMode=%d gain=%.3f gearOffset=%.3f leanEnter=%.3f leanExit=%.3f\n",
                         config.rollDegOffset, config.yawBias, (int)config.devModeEnabled, 
                         config.gain, config.gearOffset, config.leanEnterDeg, config.leanExitDeg);
-    return true;
+      break;
+      default:
+      logger.println(F("COMMANDS: l=left, r=right, n=neutral, c=calibrate, cfg=dump config"));
+      break;
   }
 
-  return false;
+  return true;
 }
 
 void setup() {
