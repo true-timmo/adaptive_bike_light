@@ -15,7 +15,7 @@
 #endif
 
 struct SERVO {
-  static constexpr int PIN                  = 10;
+  static constexpr int PIN                  = 20;
   static constexpr int PWM_MIN              = 1000;
   static constexpr int PWM_MAX              = 2000;
   static constexpr float MAX_SPEED_DPS      = 240.0f;
@@ -55,6 +55,7 @@ class RideController {
         CurveDetector detector;
 
         float rollDegFiltered     = 0.0f;
+        bool servoEnabled         = false;
         float currentServoAngle   = SERVO::NEUTRAL_DEG;
 
         uint32_t stateTimerStart  = 0;
@@ -112,16 +113,28 @@ class RideController {
         {};
 
         void init() {
-            servo->setPeriodHertz(50);
-            servo->attach(SERVO::PIN, SERVO::PWM_MIN, SERVO::PWM_MAX);
             runCalibration();
-
             turnLeft();
             delay(500);
             turnRight();
             delay(500);
             turnNeutral();
             delay(500);
+        }
+
+        void setServoState(bool state) {
+            if (state != servoEnabled) {
+                if (state == true) {
+                    servo->setPeriodHertz(50);
+                    servo->attach(SERVO::PIN, SERVO::PWM_MIN, SERVO::PWM_MAX);                    
+                    logger->printf("Servo attached. PIN:%d\n", SERVO::PIN);
+                } else {
+                    servo->detach();
+                    logger->println(F("Servo detached."));
+                }
+
+                servoEnabled = state;
+            }
         }
 
         void setTiming() {
@@ -165,15 +178,11 @@ class RideController {
         }
 
         void handleCurve(MotionData motionData) {
-            const bool validData = filter.handle(motionData);
-            if (!validData) return;
-
-            detector.handle(motionData);
-            float rollDeg = motionData.accel.rollDeg;
-            float yawRate = motionData.gyroYaw;
+            FilteredData filteredData = filter.handle(motionData);
+            if (filteredData.isShock) return;
 
             // Adaptive Glättung: je kleiner Yaw, desto stärkeres LPF (Gerade ruhiger) ---
-            float yawMag   = fabsf(motionData.gyroYaw);
+            float yawMag   = fabsf(filteredData.gyroYaw);
             float yawFrac  = fminf(yawMag / YAW_NORM, 1.0f);                   // 0..1
             float dynTau = LPF_TAU_S * (1.0f + 0.6f * (1.0f - yawFrac)); // 0.25..0.4 s
             if (state == RideState::STRAIGHT) {
@@ -181,11 +190,11 @@ class RideController {
             }
             float alpha    = lastToCurrent / (dynTau + lastToCurrent);
 
-            rollDegFiltered += alpha * (rollDeg - rollDegFiltered);
+            rollDegFiltered += alpha * (filteredData.accelRollDeg - rollDegFiltered);
             float rollFrac = fminf(fabsf(rollDegFiltered) / ROLL_NORM, 1.0f);
             float yawWeight = (1.0f - rollFrac) * yawFrac;
             yawWeight = clampf(yawWeight, 0.0f, 0.5f);
-            float blended = rollDegFiltered + (K_YAW * yawWeight) * yawRate;
+            float blended = rollDegFiltered + (K_YAW * yawWeight) * filteredData.gyroYaw;
             float targetDeg = neutralAngle() + SERVO::GAIN * blended;
 
             // Zustandserkennung (Hysterese) – Eintritt erleichtern, wenn Yaw groß ---
@@ -229,7 +238,7 @@ class RideController {
             }
 
             logEverything(
-                motionData.gyroYaw, motionData.gyroRoll, motionData.accel.rollDeg,
+                filteredData.gyroYaw, filteredData.gyroRoll, filteredData.accelRollDeg,
                 rollDegFiltered, yawFrac, state, targetDeg
             );
 

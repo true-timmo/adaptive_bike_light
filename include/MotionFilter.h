@@ -7,6 +7,16 @@
 #include "MotionSensor.h"
 #endif
 
+struct FilteredData {
+    float gyroRoll = 0.0f;
+    float gyroYaw = 0.0f;
+    float accelRollDeg = 0.0f;
+    bool isShock = false;
+
+    FilteredData() { isShock = true; }
+    FilteredData(float _gr, float _gy, float _ard) : gyroRoll(_gr), gyroYaw(_gy), accelRollDeg(_ard) {}
+};
+
 class MotionFilter {
     private:
         static constexpr float NOISE_DIFF_ROLL  = 0.28f;
@@ -23,67 +33,68 @@ class MotionFilter {
         uint32_t& now;
         float&    dtRef;
 
-        float absRollDiff = 0.0f;
-        float absYawDiff = 0.0f;
+        float lastGyroRoll = NAN;
+        float lastGyroYaw = 0.0f;
+        float lastAccelRollDeg = 0.0f;
+        float absAccelRollDiff = 0.0f;
+        float absGyroYawDiff = 0.0f;
 
-        Stream*   logger;
-        MotionData lastMotionData{};
-        bool hasLast = false;
+        Stream* logger;
 
-        bool handleNoise(MotionData& motionData) {
-            if (absRollDiff < NOISE_DIFF_ROLL) {
-                motionData.accel = lastMotionData.accel;
+
+        void handleNoise(FilteredData *filteredData) {
+            if (filteredData->isShock) return;
+
+            if (absAccelRollDiff < NOISE_DIFF_ROLL) {
+                filteredData->accelRollDeg = lastAccelRollDeg;
             } else {
-                if (absRollDiff > IQR_DIFF_ROLL) {
-                    motionData.accel.rollDeg = lastMotionData.accel.rollDeg 
-                            + constrain(motionData.accel.rollDeg - lastMotionData.accel.rollDeg,
-                                        -IQR_DIFF_ROLL, IQR_DIFF_ROLL);
+                if (absAccelRollDiff > IQR_DIFF_ROLL) {
+                    filteredData->accelRollDeg = lastAccelRollDeg
+                            + constrain(filteredData->accelRollDeg - lastAccelRollDeg, -IQR_DIFF_ROLL, IQR_DIFF_ROLL);
                 }
             }
 
-            if (absYawDiff < NOISE_DIFF_YAW) {
-                motionData.gyroYaw = lastMotionData.gyroYaw;
-                motionData.gyroRoll = lastMotionData.gyroRoll;
+            if (absGyroYawDiff < NOISE_DIFF_YAW) {
+                filteredData->gyroYaw = lastGyroYaw;
+                filteredData->gyroRoll = lastGyroRoll;
             }
 
-            if (fabsf(motionData.gyroYaw) > IQR_CAP_YAW) {
-                motionData.gyroYaw = copysign(IQR_CAP_YAW, motionData.gyroYaw);
+            if (fabsf(filteredData->gyroYaw) > IQR_CAP_YAW) {
+                filteredData->gyroYaw = copysign(IQR_CAP_YAW, filteredData->gyroYaw);
             }
         }
 
-        bool handleShock(MotionData &motionData) {
-            const bool shockByCap = motionData.gyroYaw > SHOCK_CAP_YAW || motionData.accel.rollDeg > SHOCK_CAP_ROLL;
+        void handleShock(FilteredData *filteredData) {
+            bool shockByCap = filteredData->gyroYaw > SHOCK_CAP_YAW || filteredData->accelRollDeg > SHOCK_CAP_ROLL;
 
-            if (shockByCap || absRollDiff > SHOCK_DIFF_ROLL || absYawDiff > SHOCK_DIFF_YAW) {
-                return true;
+            if (shockByCap || absAccelRollDiff > SHOCK_DIFF_ROLL || absGyroYawDiff > SHOCK_DIFF_YAW) {
+                filteredData->isShock = true;
             }
-
-            return false;
         };
 
     public:
         MotionFilter(Stream* l, uint32_t& currentTimestamp, float& lastToCurrent)
         : now(currentTimestamp), dtRef(lastToCurrent), logger(l) {}
 
-        bool handle(MotionData& motionData) {
-            if (!motionData.valid) return false;
-            
-            if (!hasLast) {
-                lastMotionData = motionData;
-                hasLast = true;
-                return false;
+        FilteredData handle(MotionData motionData) {
+            if (!isfinite(lastGyroRoll)) {
+                lastGyroRoll = motionData.gyroRoll;
+                lastGyroYaw = motionData.gyroYaw;
+                lastAccelRollDeg = motionData.accel.rollDeg;
             }
 
-            const bool hasShock = handleShock(motionData);
-            if (hasShock) return false;
+            FilteredData filteredData = FilteredData(motionData.gyroRoll, motionData.gyroYaw, motionData.accel.rollDeg);
+            absAccelRollDiff = fabsf(filteredData.accelRollDeg - lastAccelRollDeg);
+            absGyroYawDiff = fabsf(filteredData.gyroYaw - lastGyroYaw);
 
-            absRollDiff = fabsf(motionData.accel.rollDeg - lastMotionData.accel.rollDeg);
-            absYawDiff = fabsf(motionData.gyroYaw - lastMotionData.gyroYaw);
-            handleNoise(motionData);
+            handleShock(&filteredData);
+            handleNoise(&filteredData);
 
-            lastMotionData = motionData;
+            lastGyroRoll = filteredData.gyroRoll;
+            lastGyroYaw = filteredData.gyroYaw;
+            lastAccelRollDeg = filteredData.accelRollDeg;
 
-            return true;
+            return filteredData;
         };
 };
 #endif // _MotionFilter_h

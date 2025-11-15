@@ -6,9 +6,9 @@
 #include "BTSerial.h"
 #include "Button.h"
 
-#define I2C_SDA 8
-#define I2C_SCL 20
-#define BUTTON_PIN D1
+#define I2C_SDA 9
+#define I2C_SCL 10
+#define BUTTON_PIN D3
 #define BT_NAME "Dynamic BeamAssist"
 
 Servo g_servo;
@@ -28,6 +28,8 @@ enum CMD {
   HELP
 };
 
+bool usbConnected = false;
+
 static CMD resolveCMD(String cmd) {
   if (cmd == F("r")) return CMD::RIGHT;
   if (cmd == F("l")) return CMD::LEFT;
@@ -41,7 +43,7 @@ static CMD resolveCMD(String cmd) {
 static void shutdownPeripherals() {
   ride.turnNeutral();
   delay(100);
-  g_servo.detach();
+  ride.setServoState(false);
 }
 
 static void printWakeCause() {
@@ -77,8 +79,6 @@ void handleDevModeOnLongPress(ButtonEvent ev) {
 
   logger.printf("Toggle dev mode: %s\n", sMode);
 }
-
-
 
 bool handleSerialCMD(String input) {
   input.trim();
@@ -125,10 +125,13 @@ void setup() {
   }
   ride.init();
 
-  Serial.println("Starte Kurvenlicht-Regelung...");
+  logger.println("Dynamic Beam Assist ready!");
 }
 
 void loop() {
+  bool usbConnected = Serial.isPlugged();
+  ride.setServoState(!usbConnected);
+
   // Eingabe testen
   if (logger.available()) {
     String cmd = logger.readStringUntil('\n');
