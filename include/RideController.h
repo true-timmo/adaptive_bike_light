@@ -20,7 +20,7 @@ struct SERVO {
   static constexpr int PWM_MAX              = 2000;
   static constexpr float MAX_SPEED_DPS      = 240.0f;
   static constexpr float NEUTRAL_DEG        = 90.0f;
-  static constexpr float MECHANICAL_OFFSET  = -7.0f;
+  static constexpr float MECHANICAL_OFFSET  = -0.0f;
   static constexpr float MIN_DEG            = 20.0f;
   static constexpr float MAX_DEG            = 160.0f;
   static constexpr float GAIN               = -6.0f;
@@ -114,12 +114,6 @@ class RideController {
 
         void init() {
             runCalibration();
-            turnLeft();
-            delay(500);
-            turnRight();
-            delay(500);
-            turnNeutral();
-            delay(500);
         }
 
         void setServoState(bool state) {
@@ -150,13 +144,18 @@ class RideController {
             delay(300);
             logger->println(F("Calibrating roll angle..."));
             const Accel a = sensor->calibrateAccel();
-            delay(150);
             logger->println(F("Calibrating Gyro-Bias..."));
             const MotionData g = sensor->calibrateGyro();
 
             logger->println(F("Calibration done."));
             logger->printf("X-Offset = %.2f°, Y-Offset = %.2f°, Z-Offset = %.2f°\n", a.x, a.y, a.z);
             logger->printf("Gyro-X-Bias: %.3f °/s, Gyro-Z-Bias: %.3f °/s\n", g.gyroRoll, g.gyroYaw);
+
+            turnLeft();
+            delay(500);
+            turnRight();
+            delay(500);
+            turnNeutral();
         };
 
         void turnNeutral() {

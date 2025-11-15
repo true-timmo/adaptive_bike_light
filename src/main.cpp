@@ -44,6 +44,7 @@ static void shutdownPeripherals() {
   ride.turnNeutral();
   delay(100);
   ride.setServoState(false);
+  sensor.sleep(true);
 }
 
 static void printWakeCause() {
@@ -129,7 +130,7 @@ void setup() {
 }
 
 void loop() {
-  bool usbConnected = Serial.isPlugged();
+  bool usbConnected = (bool)Serial.available();
   ride.setServoState(!usbConnected);
 
   // Eingabe testen

@@ -68,6 +68,10 @@ class MotionSensor {
         g_sensor.setFilterBandwidth(MPU6050_BAND_21_HZ);
     }
 
+    bool sleep(bool state) {
+        return g_sensor.enableSleep(state);
+    }
+
     MotionData calibrateGyro(uint16_t samples = 200, uint16_t delayMs = 5) {
         float sumX = 0.0f;
         float sumZ = 0.0f;
