@@ -55,7 +55,8 @@ class RideController {
         CurveDetector detector;
 
         float rollDegFiltered     = 0.0f;
-        bool servoEnabled         = false;
+        bool servoEnabled         = true;
+        bool loggingEnabled       = false;
         float currentServoAngle   = SERVO::NEUTRAL_DEG;
 
         uint32_t stateTimerStart  = 0;
@@ -77,6 +78,8 @@ class RideController {
         };
 
         void logEverything(float gyroYaw, float gyroRoll, float accRollDeg, float accRollFiltered, float yawFrac, RideState rideState, float servoPos) {
+            if (!loggingEnabled) return;
+
             static uint32_t lastLogMs = currentTimestamp;
 
             if (currentTimestamp - lastLogMs >= 20) {
@@ -114,6 +117,12 @@ class RideController {
 
         void init() {
             runCalibration();
+        }
+
+        void setLoggingState(bool state) {
+            if (state != loggingEnabled) {
+                loggingEnabled = state;
+            }
         }
 
         void setServoState(bool state) {

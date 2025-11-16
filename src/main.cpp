@@ -25,16 +25,18 @@ enum CMD {
   NEUTRAL,
   DUMP_CFG,
   CALIBRATE,
-  HELP
+  HELP,
+  TOGGLE_SERVO,
+  TOGGLE_LOGS
 };
-
-bool usbConnected = false;
 
 static CMD resolveCMD(String cmd) {
   if (cmd == F("r")) return CMD::RIGHT;
   if (cmd == F("l")) return CMD::LEFT;
   if (cmd == F("n")) return CMD::NEUTRAL;
   if (cmd == F("c")) return CMD::CALIBRATE;
+  if (cmd == F("s")) return CMD::TOGGLE_SERVO;
+  if (cmd == F("log")) return CMD::TOGGLE_LOGS;
   if (cmd == F("cfg")) return CMD::DUMP_CFG;
 
   return CMD::HELP;
@@ -69,16 +71,17 @@ void handleSleepOnShortPress(ButtonEvent ev) {
   esp_deep_sleep_start();
 }
 
-void handleDevModeOnLongPress(ButtonEvent ev) {
+void handleLoggingOnLongPress(ButtonEvent ev) {
   if (ev != BUTTON_LONG) return;
 
-  config = eeprom.loadCalibration();
-  config.devModeEnabled = !config.devModeEnabled;
-  eeprom.saveCalibration(config);
+  config = eeprom.load();
+  config.logging = !config.logging;
+  eeprom.save(config);
+  ride.setLoggingState(config.logging);
 
-  String sMode = (config.devModeEnabled) ? "ON" : "OFF";
+  String sMode = (config.logging) ? "ON" : "OFF";
 
-  logger.printf("Toggle dev mode: %s\n", sMode);
+  logger.printf("Toggle logging mode: %s\n", sMode);
 }
 
 bool handleSerialCMD(String input) {
@@ -100,10 +103,20 @@ bool handleSerialCMD(String input) {
     case CMD::CALIBRATE:
       ride.runCalibration();
       break;
+    case CMD::TOGGLE_SERVO:
+      config.servo = !config.servo;
+      eeprom.save(config);
+      ride.setServoState(config.servo);
+      break;
+    case CMD::TOGGLE_LOGS:
+      config.logging= !config.logging;
+      eeprom.save(config);
+      ride.setLoggingState(config.logging);
+      break;
     case CMD::DUMP_CFG:
-      logger.printf("CONFIG: offset=%.2f yaw=%.3f devMode=%d gain=%.3f gearOffset=%.3f leanEnter=%.3f leanExit=%.3f\n",
-                        config.rollDegOffset, config.yawBias, (int)config.devModeEnabled, 
-                        config.gain, config.gearOffset, config.leanEnterDeg, config.leanExitDeg);
+      logger.printf("CONFIG: offset=%.2f yaw=%.3f logging=%d servo=%d gain=%.3f gearOffset=%.3f\n",
+                        config.rollDegOffset, config.yawBias, (int)config.logging, (int)config.servo,
+                        config.gain, config.gearOffset);
       break;
       default:
       logger.println(F("COMMANDS: l=left, r=right, n=neutral, c=calibrate, cfg=dump config"));
@@ -118,29 +131,26 @@ void setup() {
   eeprom.begin(64);
   delay(100);
   
+  logger.begin(BT_NAME);
   sensor.init(I2C_SDA, I2C_SCL);
-  config = eeprom.loadCalibration();
-
-  if (config.devModeEnabled) {
-    logger.begin(BT_NAME);
-  }
   ride.init();
+
+  config = eeprom.load();
+  ride.setLoggingState(config.logging);
+  ride.setServoState(config.servo);
+
 
   logger.println("Dynamic Beam Assist ready!");
 }
 
 void loop() {
-  bool usbConnected = (bool)Serial.available();
-  ride.setServoState(!usbConnected);
-
-  // Eingabe testen
   if (logger.available()) {
     String cmd = logger.readStringUntil('\n');
     if (handleSerialCMD(cmd)) return;
   }
 
   ButtonEvent ev = button.checkEvent();
-  handleDevModeOnLongPress(ev);
+  handleLoggingOnLongPress(ev);
   handleSleepOnShortPress(ev);
 
   ride.setTiming();
