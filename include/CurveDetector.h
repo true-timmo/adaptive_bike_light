@@ -29,10 +29,10 @@ class CurveDetector {
         void handle(MotionData& motionData) {
             static uint32_t lastLogMs = now;
 
-            if (now - lastLogMs >= 20) {
-                logger->printf("%+.2f|%+.2f|%+.2f|%+.1f|%+.0f\n", 
-                    motionData.accel.rollDeg, motionData.gyroRoll, motionData.gyroYaw, currentServoAngle, getDirectionSign());
-                }
+            // if (now - lastLogMs >= 20) {
+            //     logger->printf("%+.2f|%+.2f|%+.2f|%+.1f|%+.0f\n", 
+            //         motionData.accel.rollDeg, motionData.gyroRoll, motionData.gyroYaw, currentServoAngle, getDirectionSign());
+            //     }
 
             lastServoAngle = currentServoAngle;
         };

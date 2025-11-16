@@ -45,8 +45,8 @@ class MotionSensor {
     float yOffset = 0.0f;
     float zOffset = 0.0f;
 
-    float yawBias = 0.0f;
-    float rollBias = 0.0f;
+    float xBias = 0.0f;
+    float zBias = 0.0f;
     Adafruit_MPU6050 g_sensor;
 
     inline float applyDeadzone(float v, float deadzone) {
@@ -68,9 +68,13 @@ class MotionSensor {
         g_sensor.setFilterBandwidth(MPU6050_BAND_21_HZ);
     }
 
+    bool sleep(bool state) {
+        return g_sensor.enableSleep(state);
+    }
+
     MotionData calibrateGyro(uint16_t samples = 200, uint16_t delayMs = 5) {
-        float sumYaw = 0.0f;
-        float sumRoll = 0.0f;
+        float sumX = 0.0f;
+        float sumZ = 0.0f;
         uint16_t used = 0;
 
         for (uint16_t i = 0; i < samples; i++) {
@@ -85,17 +89,17 @@ class MotionSensor {
                 continue;
             }
 
-            sumRoll += gx;
-            sumYaw  += gz;
+            sumX += gx;
+            sumZ += gz;
             used++;
             delay(delayMs);
         }
         if (used > 0) {
-            rollBias = sumRoll / used;
-            yawBias  = sumYaw  / used;
+            xBias = sumX / used;
+            zBias  = sumZ  / used;
         }
 
-        return MotionData(rollBias, yawBias);
+        return MotionData(zBias, xBias);
     }
 
     Accel calibrateAccel(uint32_t duration_ms = 2000) {
@@ -109,13 +113,20 @@ class MotionSensor {
             sensors_event_t a, g, t;
             g_sensor.getEvent(&a, &g, &t);
 
-            if (isfinite(a.acceleration.x)) { 
-                sumX += a.acceleration.x;
-                sumY += a.acceleration.y; 
-                sumZ += a.acceleration.z; 
-                n++;
+            float ax = a.acceleration.x;
+            float ay = a.acceleration.y;
+            float az = a.acceleration.z;
+
+            float aNorm = sqrtf(ax*ax + ay*ay + az*az);
+            if (!isfinite(ax) || fabsf(aNorm - G_MPS2) > 0.8f) { 
+                delay(5);
+                continue;
             }
-            delay(5);
+            
+            sumX += ax;
+            sumY += ay; 
+            sumZ += az; 
+            n++;
         }
         xOffset = (n > 0) ? (float)(sumX / (double)n) : 0.0f;
         yOffset = (n > 0) ? (float)(sumY / (double)n) : 0.0f;
@@ -131,8 +142,8 @@ class MotionSensor {
         float ax = a.acceleration.x - xOffset;
         float ay = a.acceleration.y - yOffset;
         float az = a.acceleration.z - zOffset + G_MPS2;
-        float gRoll = g.gyro.x * 180.0f / M_PI - rollBias;
-        float gYaw = g.gyro.z * 180.0f / M_PI - yawBias;
+        float gYaw = g.gyro.x * 180.0f / M_PI - xBias;
+        float gRoll = g.gyro.z * 180.0f / M_PI - zBias;
 
         if (!isfinite(ax) || !isfinite(ay) || !isfinite(az) || !isfinite(gRoll) || !isfinite(gYaw))
             return MotionData();   
