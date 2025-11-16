@@ -55,7 +55,7 @@ class RideController {
         CurveDetector detector;
 
         float rollDegFiltered     = 0.0f;
-        bool servoEnabled         = true;
+        bool servoEnabled         = false;
         bool loggingEnabled       = false;
         float currentServoAngle   = SERVO::NEUTRAL_DEG;
 
