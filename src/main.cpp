@@ -133,12 +133,11 @@ void setup() {
   
   logger.begin(BT_NAME);
   sensor.init(I2C_SDA, I2C_SCL);
-  ride.init();
 
   config = eeprom.load();
   ride.setLoggingState(config.logging);
   ride.setServoState(config.servo);
-
+  ride.runCalibration();
 
   logger.println("Dynamic Beam Assist ready!");
 }

@@ -115,10 +115,6 @@ class RideController {
             detector(l, currentTimestamp, currentServoAngle, neutralAngle())
         {};
 
-        void init() {
-            runCalibration();
-        }
-
         void setLoggingState(bool state) {
             if (state != loggingEnabled) {
                 loggingEnabled = state;
@@ -205,6 +201,21 @@ class RideController {
             float blended = rollDegFiltered + (K_YAW * yawWeight) * filteredData.gyroYaw;
             float targetDeg = neutralAngle() + SERVO::GAIN * blended;
 
+            // Stellgeschwindigkeit anpassen
+            detector.curveDetected(filteredData);
+            Direction curveDir = detector.getCurveDirection();
+            float curveBias = detector.getCurveBias();
+            int servoDir = (targetDeg > currentServoAngle) ? +1 : -1;
+            float multiplier = 1.0f;
+
+            if (curveBias * servoDir > 0.0f) {
+                // Servo bewegt sich in Kurvenrichtung -> boosten
+                multiplier *= (1.0f + 0.5f * fabsf(curveBias)); // Beispiel
+            } else if (curveBias * servoDir < 0.0f) {
+                // Servo würde gegen Kurvenrichtung fahren -> dämpfen
+                multiplier *= 0.4f;
+            }
+
             // Zustandserkennung (Hysterese) – Eintritt erleichtern, wenn Yaw groß ---
             float absLean = fabsf(rollDegFiltered);
             // Dynamische Lean-Schwelle beibehalten, aber nicht unter 1° fallen lassen
@@ -250,6 +261,6 @@ class RideController {
                 rollDegFiltered, yawFrac, state, targetDeg
             );
 
-            writeServoAngle(targetDeg);
+            writeServoAngle(targetDeg, multiplier);
         }
 };
