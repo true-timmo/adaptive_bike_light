@@ -19,7 +19,7 @@
 
 struct SERVO {
   static constexpr int PIN                  = 20;
-  static constexpr int PWM_MIN              = 1000;
+  static constexpr int PWM_MIN              = 500;
   static constexpr int PWM_MAX              = 2000;
   static constexpr float MAX_SPEED_DPS      = 240.0f;
   static constexpr float NEUTRAL_DEG        = 90.0f;
@@ -27,7 +27,7 @@ struct SERVO {
   static constexpr float MIN_DEG            = 20.0f;
   static constexpr float MAX_DEG            = 160.0f;
   static constexpr float GAIN               = -6.0f;
-  static constexpr float WRITE_DEADBAND_DEG = 0.3f;
+  static constexpr float WRITE_DEADBAND_DEG = 1.0f;
 };
 
 enum class RideState { STRAIGHT, CURVE };
