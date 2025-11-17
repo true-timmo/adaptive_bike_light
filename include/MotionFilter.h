@@ -37,6 +37,7 @@ class MotionFilter {
         float lastGyroYaw = 0.0f;
         float lastAccelRollDeg = 0.0f;
         float absAccelRollDiff = 0.0f;
+        float absGyroRollDiff = 0.0f;
         float absGyroYawDiff = 0.0f;
 
         Stream* logger;
@@ -62,6 +63,10 @@ class MotionFilter {
             if (fabsf(filteredData->gyroYaw) > IQR_CAP_YAW) {
                 filteredData->gyroYaw = copysign(IQR_CAP_YAW, filteredData->gyroYaw);
             }
+
+            if (fabsf(filteredData->gyroRoll) > IQR_CAP_YAW) {
+                filteredData->gyroRoll = copysign(IQR_CAP_YAW, filteredData->gyroRoll);
+            }
         }
 
         void handleShock(FilteredData *filteredData) {
@@ -86,6 +91,7 @@ class MotionFilter {
             FilteredData filteredData = FilteredData(motionData.gyroRoll, motionData.gyroYaw, motionData.accel.rollDeg);
             absAccelRollDiff = fabsf(filteredData.accelRollDeg - lastAccelRollDeg);
             absGyroYawDiff = fabsf(filteredData.gyroYaw - lastGyroYaw);
+            absGyroRollDiff = fabsf(filteredData.gyroRoll - lastGyroRoll);
 
             handleShock(&filteredData);
             handleNoise(&filteredData);

@@ -15,15 +15,14 @@ enum class Direction: int8_t {
 
 class CurveDetector {
 private:
-    static constexpr float CURVE_CHECK_INTERVAL_MS = 50.0f;
     static constexpr float GYRO_THRESHOLD          = 0.5f;
     static constexpr float ROLL_DEG_THRESHOLD      = 0.2f;
     static constexpr float LPF_ALPHA               = 0.25f;
     static constexpr float DIR_MIN_BIAS            = 0.15f;
 
-    static constexpr float GYRO_YAW_DEV_MAX       = 20.0f;
-    static constexpr float GYRO_ROLL_DEV_MAX      = 15.0f;
-    static constexpr float ACCEL_ROLL_DEV_MAX     = 10.0f;
+    static constexpr float GYRO_YAW_DEV_MAX       = 30.0f;
+    static constexpr float GYRO_ROLL_DEV_MAX      = 30.0f;
+    static constexpr float ACCEL_ROLL_DEV_MAX     = 3.6f;
 
     uint32_t& now;
     uint32_t  lastTimestamp = 0;
@@ -124,6 +123,7 @@ public:
     float     getCurveBias() const      { return currentCurveBias; }
 
     bool curveDetected(FilteredData& filteredData) {
+        if (filteredData.isShock) return false;
         if (!isfinite(lastServoAngle)) {
             lastServoAngle      = currentServoAngle;
             lastGyroYaw         = filteredData.gyroYaw;
