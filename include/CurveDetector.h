@@ -7,8 +7,10 @@
 #include "MotionFilter.h"
 #endif
 
-enum Direction {
-    LEFT, NEUTRAL, RIGHT
+enum class Direction: int8_t {
+    LEFT = -1,
+    NEUTRAL = 0,
+    RIGHT = 1
 };
 
 class CurveDetector {
@@ -16,6 +18,12 @@ private:
     static constexpr float CURVE_CHECK_INTERVAL_MS = 50.0f;
     static constexpr float GYRO_THRESHOLD          = 0.5f;
     static constexpr float ROLL_DEG_THRESHOLD      = 0.2f;
+    static constexpr float LPF_ALPHA               = 0.25f;
+    static constexpr float DIR_MIN_BIAS            = 0.15f;
+
+    static constexpr float GYRO_YAW_DEV_MAX       = 20.0f;
+    static constexpr float GYRO_ROLL_DEV_MAX      = 15.0f;
+    static constexpr float ACCEL_ROLL_DEV_MAX     = 10.0f;
 
     uint32_t& now;
     uint32_t  lastTimestamp = 0;
@@ -23,15 +31,16 @@ private:
     float  neutralAngle;
     float& currentServoAngle;
 
-    float lastServoAngle     = NAN;
-    float lastGyroYaw        = 0.0f;
-    float lastAccelRollDeg   = 0.0f;
+    float lastServoAngle  = NAN;
+    float lastGyroYaw = 0.0f;
+    float lastGyroRoll = 0.0f;
+    float lastAccelRoll = 0.0f;
 
-    Direction lastGyroYawDirection   = Direction::NEUTRAL;
-    Direction lastAccellRollDirection= Direction::NEUTRAL;
+    float lastGyroYawDev      = 0.0f;
+    float lastGyroRollDev     = 0.0f;
+    float lastAccelRollDev    = 0.0f;
+
     Direction lastServoDirection     = Direction::NEUTRAL;
-
-    // neue State-Variablen:
     Direction currentCurveDir        = Direction::NEUTRAL;
     float     currentCurveBias       = 0.0f;
     Direction lastStableCurveDir     = Direction::NEUTRAL;
@@ -39,8 +48,42 @@ private:
 
     Stream* logger;
 
+    float getFilteredDeviation(float current, float last) {
+        return last + LPF_ALPHA * (current - last);
+    }
+
+    float calculateDeviationNormalized(float current, float last, float threshold, float maxDevAbs) {
+        float delta = current - last;
+        if (fabsf(delta) < threshold) {
+            return 0.0f;
+        }
+        float norm = delta / maxDevAbs;
+        if (norm > 1.0f)  norm = 1.0f;
+        if (norm < -1.0f) norm = -1.0f;
+        return norm;
+    }
+
+    float calculateLastGyroYawDev(float currentGyroYaw) {
+        float devNorm = calculateDeviationNormalized(currentGyroYaw, lastGyroYaw,
+                                                     GYRO_THRESHOLD, GYRO_YAW_DEV_MAX);
+        return getFilteredDeviation(devNorm, lastGyroYawDev);
+    }
+
+    float calculateLastGyroRollDev(float currentGyroRoll) {
+        float devNorm = calculateDeviationNormalized(currentGyroRoll, lastGyroRoll,
+                                                     GYRO_THRESHOLD, GYRO_ROLL_DEV_MAX);
+        return getFilteredDeviation(devNorm, lastGyroRollDev);
+    }
+
+    float calculateLastAccelRollDev(float currentAccelRoll) {
+        float devNorm = calculateDeviationNormalized(currentAccelRoll, lastAccelRoll,
+                                                     ROLL_DEG_THRESHOLD, ACCEL_ROLL_DEV_MAX);
+        return getFilteredDeviation(devNorm, lastAccelRollDev);
+    }
+
     void setLastData(FilteredData& filteredData) {
-        // Beim allerersten Mal ist lastServoAngle noch NAN → Servo-Richtung nicht aus Delta ableiten
+        lastTimestamp = now;
+
         if (isfinite(lastServoAngle)) {
             lastServoDirection = getIntervalDirection(lastServoAngle, currentServoAngle, 0.0f);
         } else {
@@ -48,13 +91,9 @@ private:
         }
         lastServoAngle = currentServoAngle;
 
-        lastGyroYawDirection = getIntervalDirection(lastGyroYaw, filteredData.gyroYaw, GYRO_THRESHOLD);
-        lastGyroYaw          = filteredData.gyroYaw;
-
-        lastAccellRollDirection = getIntervalDirection(lastAccelRollDeg, filteredData.accelRollDeg, ROLL_DEG_THRESHOLD);
-        lastAccelRollDeg        = filteredData.accelRollDeg;
-
-        lastTimestamp = now;
+        lastGyroYaw   = filteredData.gyroYaw;
+        lastGyroRoll  = filteredData.gyroRoll;
+        lastAccelRoll = filteredData.accelRollDeg;
     }
 
     Direction getDirection(float deg) {
@@ -69,11 +108,9 @@ private:
 
     Direction getServoDirection() {
         if (currentServoAngle == neutralAngle) return Direction::NEUTRAL;
-        // bei dir: größerer Winkel = nach links schauen
         return currentServoAngle > neutralAngle ? Direction::LEFT : Direction::RIGHT;
     }
 
-    // Hilfsfunktion: Bias anpassen je nach Richtung
     void addWeight(Direction d, float w, float& bias) {
         if (d == Direction::LEFT)  bias -= w;
         if (d == Direction::RIGHT) bias += w;
@@ -87,79 +124,56 @@ public:
     float     getCurveBias() const      { return currentCurveBias; }
 
     bool curveDetected(FilteredData& filteredData) {
-        // Erstes Sample: nur initialisieren
         if (!isfinite(lastServoAngle)) {
-            setLastData(filteredData);
-            currentCurveDir  = Direction::NEUTRAL;
-            currentCurveBias = 0.0f;
+            lastServoAngle      = currentServoAngle;
+            lastGyroYaw         = filteredData.gyroYaw;
+            lastGyroRoll        = filteredData.gyroRoll;
+            lastAccelRoll       = filteredData.accelRollDeg;
+            lastGyroYawDev      = 0.0f;
+            lastGyroRollDev     = 0.0f;
+            lastAccelRollDev    = 0.0f;
+            lastStableCurveDir  = Direction::NEUTRAL;
+            stableCount         = 0;
+            currentCurveDir     = Direction::NEUTRAL;
+            currentCurveBias    = 0.0f;
+            lastTimestamp       = now;
             return false;
         }
 
-        // Nur alle 50 ms echte Analyse machen:
-        if (now - lastTimestamp < CURVE_CHECK_INTERVAL_MS) {
-            // schon einmal etwas erkannt? -> Status bleibt gültig
-            return (currentCurveDir != Direction::NEUTRAL);
-        }
+        lastGyroYawDev   = calculateLastGyroYawDev(filteredData.gyroYaw);
+        lastGyroRollDev  = calculateLastGyroRollDev(filteredData.gyroRoll);
+        lastAccelRollDev = calculateLastAccelRollDev(filteredData.accelRollDeg);
 
-        // Bewegungsrichtungen seit letztem Check bestimmen
-        Direction yawDir   = getIntervalDirection(lastGyroYaw,        filteredData.gyroYaw,      GYRO_THRESHOLD);
-        Direction rollDir  = getIntervalDirection(lastAccelRollDeg,   filteredData.accelRollDeg, ROLL_DEG_THRESHOLD);
-        Direction servoDir = getServoDirection(); // absolute Richtung, kein Delta
+        float bias = 0.6f * lastGyroYawDev
+                   + 0.25f * lastGyroRollDev
+                   + 0.15f * lastAccelRollDev;
 
-        float bias = 0.0f;
-
-        // Yaw etwas stärker gewichten (Lenkeinschlag / Kurveneinleitung)
-        addWeight(yawDir,  0.6f, bias);
-        // Roll etwas schwächer (kommt leicht verzögert)
-        addWeight(rollDir, 0.4f, bias);
-
-        // Servo-Bewegung, wenn sie in die gleiche Richtung geht, leicht verstärken
-        Direction servoMoveDir = getIntervalDirection(lastServoAngle, currentServoAngle, 0.5f);
-        addWeight(servoMoveDir, 0.2f, bias);
-
-        // Physikalische Konsistenz prüfen:
-        // Wenn Yaw und Roll sich widersprechen, Bias stark reduzieren
-        if (yawDir != Direction::NEUTRAL && rollDir != Direction::NEUTRAL && yawDir != rollDir) {
-            bias *= 0.3f; // eher "Neutral / unsicher"
-        }
-
-        // Hart unmögliche Situation (z.B. starker Yaw rechts, starker Roll links) komplett neutralisieren
-        if (yawDir != Direction::NEUTRAL && rollDir != Direction::NEUTRAL && yawDir != rollDir &&
-            fabsf(filteredData.gyroYaw) > 5.0f && fabsf(filteredData.accelRollDeg) > 3.0f) {
-            bias = 0.0f;
-        }
-
-        // clamp auf [-1..+1]
-        if (bias >  1.0f) bias =  1.0f;
+        if (bias > 1.0f)  bias = 1.0f;
         if (bias < -1.0f) bias = -1.0f;
 
-        // Aus Bias eine Richtung ableiten
         Direction candidateDir = Direction::NEUTRAL;
-        if (fabsf(bias) >= 0.2f) { // kleine Bias als "neutral" werten
+        if (fabsf(bias) >= DIR_MIN_BIAS) {
             candidateDir = (bias > 0.0f) ? Direction::RIGHT : Direction::LEFT;
         }
 
-        // Stabilität / S-Kurven-Detektion:
+        // Detect S-Curve:
         if (candidateDir == Direction::NEUTRAL) {
             stableCount = 0;
         } else {
             if (candidateDir == lastStableCurveDir) {
-                stableCount++;
+                if (stableCount < 255) stableCount++;
             } else {
-                // Richtungswechsel → potentielle S-Kurve
-                // Du kannst hier z.B. den Bias für kurze Zeit härter machen:
+                // Curve detected = boost new direction
                 if (lastStableCurveDir != Direction::NEUTRAL) {
-                    // S-Kurve erkannt → stärkere Betonung der neuen Richtung
                     bias = (candidateDir == Direction::RIGHT) ? 1.0f : -1.0f;
                 }
-                stableCount = 1;
+                stableCount        = 1;
                 lastStableCurveDir = candidateDir;
             }
         }
 
         currentCurveDir  = candidateDir;
         currentCurveBias = bias;
-
         setLastData(filteredData);
 
         return (currentCurveDir != Direction::NEUTRAL);

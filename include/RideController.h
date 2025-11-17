@@ -46,9 +46,8 @@ class RideController {
         static constexpr float YAW_ENTER_MIN_DPS    = 1.5f;   // Yaw, die „echte“ Lenkung andeutet
         static constexpr float YAW_ENTER_STRONG_DPS = 15.0f;  // starke Lenkbewegung => Kurve auch ohne viel Lean
 
-        // --- „Schwanken“ glätten ---
-        static constexpr float LPF_TAU_S           = 0.12f;  // größer = stärker geglättet
-        static constexpr float OUTPUT_DEADBAND_DEG = 1.2f;
+        static constexpr float LPF_TAU_S = 0.12f;
+        static constexpr float CURVE_BOOST_FACTOR = 0.5f;
 
         Stream *logger;
         MotionSensor *sensor;
@@ -81,15 +80,15 @@ class RideController {
             }
         };
 
-        void logEverything(float gyroYaw, float accRollDeg, float accRollFiltered, float yawFrac, RideState rideState, float multiplier, float servoPos) {
+        void logEverything(float gyroYaw, float gyroRoll, float accRollDeg, float accRollFiltered, float yawFrac, RideState rideState, float multiplier, float servoPos) {
             if (!loggingEnabled) return;
 
             static uint32_t lastLogMs = currentTimestamp;
 
             if (currentTimestamp - lastLogMs >= 20) {
                 lastLogMs = currentTimestamp;
-                logger->printf("|%+.2f|%+.2f|%+.2f|%+.2f|%d%+.1f|%+.1f\n",
-                gyroYaw, accRollDeg, accRollFiltered, yawFrac, rideState, multiplier, servoPos);
+                logger->printf("|%+.2f|%+.2f|%+.2f|%+.2f|%+.2f|%d|%+.1f|%+.1f\n",
+                gyroYaw, gyroRoll, accRollDeg, accRollFiltered, yawFrac, rideState, multiplier, servoPos);
             }
         };
 
@@ -197,10 +196,10 @@ class RideController {
 
             // Adaptive Glättung: je kleiner Yaw, desto stärkeres LPF (Gerade ruhiger) ---
             float yawMag   = fabsf(filteredData.gyroYaw);
-            float yawFrac  = fminf(yawMag / YAW_NORM, 1.0f);                   // 0..1
-            float dynTau = LPF_TAU_S * (1.0f + 0.6f * (1.0f - yawFrac)); // 0.25..0.4 s
+            float yawFrac  = fminf(yawMag / YAW_NORM, 1.0f);
+            float dynTau = LPF_TAU_S * (1.0f + 0.6f * (1.0f - yawFrac));
             if (state == RideState::STRAIGHT) {
-                dynTau *= 1.5f; // in Gerade stärker glätten
+                dynTau *= 1.5f;
             }
             float alpha    = lastToCurrent / (dynTau + lastToCurrent);
 
@@ -213,16 +212,13 @@ class RideController {
 
             float multiplier = 1.0f;
             if (curveBoostEnabled && detector.curveDetected(filteredData)) {
-                // Stellgeschwindigkeit anpassen
                 float curveBias = detector.getCurveBias();
                 int servoDir = (targetDeg > currentServoAngle) ? +1 : -1;
 
                 if (curveBias * servoDir > 0.0f) {
-                    // Servo bewegt sich in Kurvenrichtung -> boosten
-                    multiplier *= (1.0f + 0.5f * fabsf(curveBias)); // Beispiel
+                    multiplier *= (1.0f + CURVE_BOOST_FACTOR * fabsf(curveBias));
                 } else if (curveBias * servoDir < 0.0f) {
-                    // Servo würde gegen Kurvenrichtung fahren -> dämpfen
-                    multiplier *= 0.4f;
+                    multiplier *= (1.0f - CURVE_BOOST_FACTOR * fabsf(curveBias));
                 }
             }
 
@@ -267,7 +263,7 @@ class RideController {
             }
 
             logEverything(
-                filteredData.gyroYaw, filteredData.accelRollDeg,
+                filteredData.gyroYaw, filteredData.gyroRoll, filteredData.accelRollDeg,
                 rollDegFiltered, yawFrac, state, multiplier, targetDeg
             );
 
