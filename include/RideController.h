@@ -165,10 +165,6 @@ class RideController {
             logger->printf("X-Offset = %.2f°, Y-Offset = %.2f°, Z-Offset = %.2f°\n", a.x, a.y, a.z);
             logger->printf("Gyro-X-Bias: %.3f °/s, Gyro-Z-Bias: %.3f °/s\n", g.gyroRoll, g.gyroYaw);
 
-            turnLeft();
-            delay(500);
-            turnRight();
-            delay(500);
             turnNeutral();
         };
 
