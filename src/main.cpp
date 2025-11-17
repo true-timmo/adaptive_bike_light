@@ -19,7 +19,7 @@ Button button = Button(BUTTON_PIN, LOW);
 RideController ride = RideController(&sensor, &g_servo, &logger);
 ConfigBlob config;
 
-enum CMD {
+enum class CMD {
   LEFT,
   RIGHT,
   NEUTRAL,

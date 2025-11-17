@@ -1,6 +1,5 @@
 #pragma once
 #include <Arduino.h>
-#include "MotionFilter.h"
 
 #ifndef ESP32_Servo_h
 #include <ESP32Servo.h>
@@ -8,6 +7,10 @@
 
 #ifndef MotionSensor_h
 #include "MotionSensor.h"
+#endif
+
+#ifndef _MotionFilter_h
+#include "MotionFilter.h"
 #endif
 
 #ifndef CurveDetector_h
