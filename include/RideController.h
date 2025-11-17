@@ -57,6 +57,7 @@ class RideController {
         float rollDegFiltered     = 0.0f;
         bool servoEnabled         = false;
         bool loggingEnabled       = false;
+        bool curveBoostEnabled    = false;
         float currentServoAngle   = SERVO::NEUTRAL_DEG;
 
         uint32_t stateTimerStart  = 0;
@@ -77,15 +78,15 @@ class RideController {
             }
         };
 
-        void logEverything(float gyroYaw, float gyroRoll, float accRollDeg, float accRollFiltered, float yawFrac, RideState rideState, float servoPos) {
+        void logEverything(float gyroYaw, float accRollDeg, float accRollFiltered, float yawFrac, RideState rideState, float multiplier, float servoPos) {
             if (!loggingEnabled) return;
 
             static uint32_t lastLogMs = currentTimestamp;
 
             if (currentTimestamp - lastLogMs >= 20) {
                 lastLogMs = currentTimestamp;
-                logger->printf("%+.2f|%+.2f|%+.2f|%+.2f|%+.2f|%d|%+.1f\n",
-                gyroYaw, gyroRoll, accRollDeg, accRollFiltered, yawFrac, rideState, servoPos);
+                logger->printf("|%+.2f|%+.2f|%+.2f|%+.2f|%d%+.1f|%+.1f\n",
+                gyroYaw, accRollDeg, accRollFiltered, yawFrac, rideState, multiplier, servoPos);
             }
         };
 
@@ -114,6 +115,12 @@ class RideController {
             filter(l, currentTimestamp, lastToCurrent),
             detector(l, currentTimestamp, currentServoAngle, neutralAngle())
         {};
+
+        bool toggleCurveBoostState() {
+            curveBoostEnabled = !curveBoostEnabled;
+
+            return curveBoostEnabled;
+        }
 
         void setLoggingState(bool state) {
             if (state != loggingEnabled) {
@@ -201,19 +208,19 @@ class RideController {
             float blended = rollDegFiltered + (K_YAW * yawWeight) * filteredData.gyroYaw;
             float targetDeg = neutralAngle() + SERVO::GAIN * blended;
 
-            // Stellgeschwindigkeit anpassen
-            detector.curveDetected(filteredData);
-            Direction curveDir = detector.getCurveDirection();
-            float curveBias = detector.getCurveBias();
-            int servoDir = (targetDeg > currentServoAngle) ? +1 : -1;
             float multiplier = 1.0f;
+            if (curveBoostEnabled && detector.curveDetected(filteredData)) {
+                // Stellgeschwindigkeit anpassen
+                float curveBias = detector.getCurveBias();
+                int servoDir = (targetDeg > currentServoAngle) ? +1 : -1;
 
-            if (curveBias * servoDir > 0.0f) {
-                // Servo bewegt sich in Kurvenrichtung -> boosten
-                multiplier *= (1.0f + 0.5f * fabsf(curveBias)); // Beispiel
-            } else if (curveBias * servoDir < 0.0f) {
-                // Servo würde gegen Kurvenrichtung fahren -> dämpfen
-                multiplier *= 0.4f;
+                if (curveBias * servoDir > 0.0f) {
+                    // Servo bewegt sich in Kurvenrichtung -> boosten
+                    multiplier *= (1.0f + 0.5f * fabsf(curveBias)); // Beispiel
+                } else if (curveBias * servoDir < 0.0f) {
+                    // Servo würde gegen Kurvenrichtung fahren -> dämpfen
+                    multiplier *= 0.4f;
+                }
             }
 
             // Zustandserkennung (Hysterese) – Eintritt erleichtern, wenn Yaw groß ---
@@ -257,8 +264,8 @@ class RideController {
             }
 
             logEverything(
-                filteredData.gyroYaw, filteredData.gyroRoll, filteredData.accelRollDeg,
-                rollDegFiltered, yawFrac, state, targetDeg
+                filteredData.gyroYaw, filteredData.accelRollDeg,
+                rollDegFiltered, yawFrac, state, multiplier, targetDeg
             );
 
             writeServoAngle(targetDeg, multiplier);

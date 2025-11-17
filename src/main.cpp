@@ -27,7 +27,8 @@ enum CMD {
   CALIBRATE,
   HELP,
   TOGGLE_SERVO,
-  TOGGLE_LOGS
+  TOGGLE_LOGS,
+  TOGGLE_BOOST
 };
 
 static CMD resolveCMD(String cmd) {
@@ -36,6 +37,7 @@ static CMD resolveCMD(String cmd) {
   if (cmd == F("n")) return CMD::NEUTRAL;
   if (cmd == F("c")) return CMD::CALIBRATE;
   if (cmd == F("s")) return CMD::TOGGLE_SERVO;
+  if (cmd == F("b")) return CMD::TOGGLE_BOOST;
   if (cmd == F("log")) return CMD::TOGGLE_LOGS;
   if (cmd == F("cfg")) return CMD::DUMP_CFG;
 
@@ -113,13 +115,16 @@ bool handleSerialCMD(String input) {
       eeprom.save(config);
       ride.setLoggingState(config.logging);
       break;
+    case CMD::TOGGLE_BOOST:
+      logger.printf("Toggle curve boost: %s\n", (ride.toggleCurveBoostState()) ? F("ON") : F("OFF"));
+      break;
     case CMD::DUMP_CFG:
       logger.printf("CONFIG: offset=%.2f yaw=%.3f logging=%d servo=%d gain=%.3f gearOffset=%.3f\n",
                         config.rollDegOffset, config.yawBias, (int)config.logging, (int)config.servo,
                         config.gain, config.gearOffset);
       break;
       default:
-      logger.println(F("COMMANDS: l=left, r=right, n=neutral, c=calibrate, cfg=dump config"));
+      logger.println(F("COMMANDS: l=left, r=right, n=neutral, c=calibrate, b=toggle boost, log=toggle logs, cfg=dump config"));
       break;
   }
 
