@@ -28,7 +28,8 @@ enum class CMD {
   HELP,
   TOGGLE_SERVO,
   TOGGLE_LOGS,
-  TOGGLE_BOOST
+  TOGGLE_BOOST,
+  SET_OFFSET
 };
 
 static CMD resolveCMD(String cmd) {
@@ -40,10 +41,23 @@ static CMD resolveCMD(String cmd) {
   if (cmd == F("b")) return CMD::TOGGLE_BOOST;
   if (cmd == F("log")) return CMD::TOGGLE_LOGS;
   if (cmd == F("cfg")) return CMD::DUMP_CFG;
+  if (cmd == F("sos")) return CMD::SET_OFFSET;
 
   return CMD::HELP;
 }
 
+void splitCommand(String input, CMD &cmd, String &value) {
+    int spacePos = input.indexOf(' ');
+
+    if (spacePos == -1) {
+        cmd = resolveCMD(input);
+        value = "";
+    } else {
+        cmd   = resolveCMD(input.substring(0, spacePos));
+        value = input.substring(spacePos + 1);
+        value.trim();
+    }
+}
 static void shutdownPeripherals() {
   ride.turnNeutral();
   delay(100);
@@ -90,7 +104,9 @@ bool handleSerialCMD(String input) {
   input.trim();
 
   if (input.isEmpty()) return false;
-  CMD cmd = resolveCMD(input);
+
+  CMD cmd; String value;
+  splitCommand(input, cmd, value);
 
   switch (cmd) {
     case CMD::LEFT:
@@ -118,8 +134,14 @@ bool handleSerialCMD(String input) {
     case CMD::TOGGLE_BOOST:
       logger.printf("Toggle curve boost: %s\n", (ride.toggleCurveBoostState()) ? F("ON") : F("OFF"));
       break;
+    case CMD::SET_OFFSET:
+      config.gearOffset = value.toInt();
+      eeprom.save(config);
+      ride.setGearOffset(config.gearOffset);
+      logger.printf("Mechanical gear offset set to: %d\n", config.gearOffset);
+      break;
     case CMD::DUMP_CFG:
-      logger.printf("CONFIG: offset=%.2f yaw=%.3f logging=%d servo=%d gain=%.3f gearOffset=%.3f\n",
+      logger.printf("CONFIG: offset=%.2f yaw=%.3f logging=%d servo=%d gain=%.3f gearOffset=%d\n",
                         config.rollDegOffset, config.yawBias, (int)config.logging, (int)config.servo,
                         config.gain, config.gearOffset);
       break;
@@ -142,6 +164,7 @@ void setup() {
   config = eeprom.load();
   ride.setLoggingState(config.logging);
   ride.setServoState(config.servo);
+  ride.setGearOffset(config.gearOffset);
   ride.runCalibration();
 
   logger.println("Dynamic Beam Assist ready!");

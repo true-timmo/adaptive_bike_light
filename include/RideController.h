@@ -23,10 +23,9 @@ struct SERVO {
   static constexpr int PWM_MAX              = 2000;
   static constexpr float MAX_SPEED_DPS      = 240.0f;
   static constexpr float NEUTRAL_DEG        = 90.0f;
-  static constexpr float MECHANICAL_OFFSET  = -0.0f;
-  static constexpr float MIN_DEG            = 20.0f;
-  static constexpr float MAX_DEG            = 160.0f;
-  static constexpr float GAIN               = -6.0f;
+  static constexpr float MIN_DEG            = 15.0f;
+  static constexpr float MAX_DEG            = 165.0f;
+  static constexpr float GAIN               = -5.5f;
   static constexpr float WRITE_DEADBAND_DEG = 1.0f;
 };
 
@@ -56,6 +55,7 @@ class RideController {
         MotionFilter filter;
         CurveDetector detector;
 
+        int8_t gearOffset         = 0;
         float rollDegFiltered     = 0.0f;
         bool servoEnabled         = false;
         bool loggingEnabled       = false;
@@ -97,16 +97,16 @@ class RideController {
         };
 
         float neutralAngle() const {
-            return SERVO::NEUTRAL_DEG + SERVO::MECHANICAL_OFFSET;
+            return SERVO::NEUTRAL_DEG + gearOffset;
         }
 
         float minAngle() {
-            return SERVO::MIN_DEG + SERVO::MECHANICAL_OFFSET;
+            return SERVO::MIN_DEG + fabsf(gearOffset);
 
         };
 
         float maxAngle() {
-            return SERVO::MAX_DEG + SERVO::MECHANICAL_OFFSET;
+            return SERVO::MAX_DEG - fabsf(gearOffset);
         }
 
     public:
@@ -122,6 +122,10 @@ class RideController {
             curveBoostEnabled = !curveBoostEnabled;
 
             return curveBoostEnabled;
+        }
+
+        void setGearOffset(int8_t offset) {
+            gearOffset = offset;
         }
 
         void setLoggingState(bool state) {
@@ -210,7 +214,7 @@ class RideController {
             float multiplier = 1.0f;
             if (curveBoostEnabled && isCurve) {
                 float curveBias = detector.getCurveBias();
-                int servoDir = (targetDeg > currentServoAngle) ? +1 : -1;
+                int servoDir = (targetDeg > currentServoAngle) ? -1 : +1;
 
                 if (curveBias * servoDir > 0.0f) {
                     multiplier = (1.0f + CURVE_BOOST_FACTOR * fabsf(curveBias));
