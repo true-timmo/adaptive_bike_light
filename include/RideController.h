@@ -206,15 +206,16 @@ class RideController {
             float blended = rollDegFiltered + (K_YAW * yawWeight) * filteredData.gyroYaw;
             float targetDeg = neutralAngle() + SERVO::GAIN * blended;
 
+            bool isCurve = detector.curveDetected(filteredData);
             float multiplier = 1.0f;
-            if (curveBoostEnabled && detector.curveDetected(filteredData)) {
+            if (curveBoostEnabled && isCurve) {
                 float curveBias = detector.getCurveBias();
                 int servoDir = (targetDeg > currentServoAngle) ? +1 : -1;
 
                 if (curveBias * servoDir > 0.0f) {
-                    multiplier *= (1.0f + CURVE_BOOST_FACTOR * fabsf(curveBias));
+                    multiplier = (1.0f + CURVE_BOOST_FACTOR * fabsf(curveBias));
                 } else if (curveBias * servoDir < 0.0f) {
-                    multiplier *= (1.0f - CURVE_BOOST_FACTOR * fabsf(curveBias));
+                    multiplier = (1.0f - CURVE_BOOST_FACTOR * fabsf(curveBias));
                 }
             }
 

@@ -15,14 +15,12 @@ enum class Direction: int8_t {
 
 class CurveDetector {
 private:
-    static constexpr float GYRO_THRESHOLD          = 0.5f;
-    static constexpr float ROLL_DEG_THRESHOLD      = 0.2f;
     static constexpr float LPF_ALPHA               = 0.25f;
     static constexpr float DIR_MIN_BIAS            = 0.15f;
 
-    static constexpr float GYRO_YAW_DEV_MAX       = 30.0f;
-    static constexpr float GYRO_ROLL_DEV_MAX      = 30.0f;
-    static constexpr float ACCEL_ROLL_DEV_MAX     = 3.6f;
+    static constexpr float GYRO_YAW_MAX       = 30.0f;
+    static constexpr float GYRO_ROLL_MAX      = 30.0f;
+    static constexpr float ACCEL_ROLL_MAX     = 3.6f;
 
     uint32_t& now;
     uint32_t  lastTimestamp = 0;
@@ -31,13 +29,9 @@ private:
     float& currentServoAngle;
 
     float lastServoAngle  = NAN;
-    float lastGyroYaw = 0.0f;
-    float lastGyroRoll = 0.0f;
-    float lastAccelRoll = 0.0f;
-
-    float lastGyroYawDev      = 0.0f;
-    float lastGyroRollDev     = 0.0f;
-    float lastAccelRollDev    = 0.0f;
+    float filteredGyroYaw = 0.0f;
+    float filteredGyroRoll = 0.0f;
+    float filteredAccelRoll = 0.0f;
 
     Direction lastServoDirection     = Direction::NEUTRAL;
     Direction currentCurveDir        = Direction::NEUTRAL;
@@ -47,37 +41,30 @@ private:
 
     Stream* logger;
 
-    float getFilteredDeviation(float current, float last) {
+    float getFilteredValue(float current, float last) {
         return last + LPF_ALPHA * (current - last);
     }
 
-    float calculateDeviationNormalized(float current, float last, float threshold, float maxDevAbs) {
-        float delta = current - last;
-        if (fabsf(delta) < threshold) {
-            return 0.0f;
-        }
-        float norm = delta / maxDevAbs;
+    float calculateNormalized(float value, float maxAbsValue) {
+        float norm = value / maxAbsValue;
         if (norm > 1.0f)  norm = 1.0f;
         if (norm < -1.0f) norm = -1.0f;
         return norm;
     }
 
-    float calculateLastGyroYawDev(float currentGyroYaw) {
-        float devNorm = calculateDeviationNormalized(currentGyroYaw, lastGyroYaw,
-                                                     GYRO_THRESHOLD, GYRO_YAW_DEV_MAX);
-        return getFilteredDeviation(devNorm, lastGyroYawDev);
+    float calculateGyroYawNorm(float currentGyroYaw) {
+        filteredGyroYaw = getFilteredValue(currentGyroYaw, filteredGyroYaw);
+        return calculateNormalized(filteredGyroYaw, GYRO_YAW_MAX);
     }
 
-    float calculateLastGyroRollDev(float currentGyroRoll) {
-        float devNorm = calculateDeviationNormalized(currentGyroRoll, lastGyroRoll,
-                                                     GYRO_THRESHOLD, GYRO_ROLL_DEV_MAX);
-        return getFilteredDeviation(devNorm, lastGyroRollDev);
+    float calculateGyroRollNorm(float currentGyroRoll) {
+        filteredGyroRoll = getFilteredValue(currentGyroRoll, filteredGyroRoll);
+        return calculateNormalized(filteredGyroRoll, GYRO_ROLL_MAX);
     }
-
-    float calculateLastAccelRollDev(float currentAccelRoll) {
-        float devNorm = calculateDeviationNormalized(currentAccelRoll, lastAccelRoll,
-                                                     ROLL_DEG_THRESHOLD, ACCEL_ROLL_DEV_MAX);
-        return getFilteredDeviation(devNorm, lastAccelRollDev);
+    
+    float calculateAccelRollNorm(float currentAccelRoll) {
+        filteredAccelRoll = getFilteredValue(currentAccelRoll, filteredAccelRoll);
+        return calculateNormalized(filteredAccelRoll, ACCEL_ROLL_MAX);
     }
 
     void setLastData(FilteredData& filteredData) {
@@ -89,10 +76,6 @@ private:
             lastServoDirection = getServoDirection();
         }
         lastServoAngle = currentServoAngle;
-
-        lastGyroYaw   = filteredData.gyroYaw;
-        lastGyroRoll  = filteredData.gyroRoll;
-        lastAccelRoll = filteredData.accelRollDeg;
     }
 
     Direction getDirection(float deg) {
@@ -126,12 +109,9 @@ public:
         if (filteredData.isShock) return false;
         if (!isfinite(lastServoAngle)) {
             lastServoAngle      = currentServoAngle;
-            lastGyroYaw         = filteredData.gyroYaw;
-            lastGyroRoll        = filteredData.gyroRoll;
-            lastAccelRoll       = filteredData.accelRollDeg;
-            lastGyroYawDev      = 0.0f;
-            lastGyroRollDev     = 0.0f;
-            lastAccelRollDev    = 0.0f;
+            filteredGyroYaw     = filteredData.gyroYaw;
+            filteredGyroRoll    = filteredData.gyroRoll;
+            filteredAccelRoll   = filteredData.accelRollDeg;
             lastStableCurveDir  = Direction::NEUTRAL;
             stableCount         = 0;
             currentCurveDir     = Direction::NEUTRAL;
@@ -140,13 +120,13 @@ public:
             return false;
         }
 
-        lastGyroYawDev   = calculateLastGyroYawDev(filteredData.gyroYaw);
-        lastGyroRollDev  = calculateLastGyroRollDev(filteredData.gyroRoll);
-        lastAccelRollDev = calculateLastAccelRollDev(filteredData.accelRollDeg);
+        float gyroYawNorm = calculateGyroYawNorm(filteredData.gyroYaw);
+        float gyroRollNowm = calculateGyroRollNorm(filteredData.gyroRoll);
+        float accelRollNorm = calculateAccelRollNorm(filteredData.accelRollDeg);
 
-        float bias = 0.6f * lastGyroYawDev
-                   + 0.25f * lastGyroRollDev
-                   + 0.15f * lastAccelRollDev;
+        float bias = 0.6f * gyroYawNorm
+                   + 0.25f * gyroRollNowm
+                   + 0.15f * accelRollNorm;
 
         if (bias > 1.0f)  bias = 1.0f;
         if (bias < -1.0f) bias = -1.0f;
@@ -156,20 +136,17 @@ public:
             candidateDir = (bias > 0.0f) ? Direction::RIGHT : Direction::LEFT;
         }
 
-        // Detect S-Curve:
         if (candidateDir == Direction::NEUTRAL) {
             stableCount = 0;
         } else {
             if (candidateDir == lastStableCurveDir) {
-                if (stableCount < 255) stableCount++;
+                stableCount = min(stableCount+1, 10);
             } else {
-                // Curve detected = boost new direction
-                if (lastStableCurveDir != Direction::NEUTRAL) {
-                    bias = (candidateDir == Direction::RIGHT) ? 1.0f : -1.0f;
-                }
-                stableCount        = 1;
+                stableCount = 0;
                 lastStableCurveDir = candidateDir;
             }
+
+            bias += copysign(0.5f * stableCount * 0.1, bias); 
         }
 
         currentCurveDir  = candidateDir;
