@@ -15,31 +15,24 @@ enum class Direction: int8_t {
 
 class CurveDetector {
 private:
-    static constexpr float LPF_ALPHA               = 0.25f;
-    static constexpr float DIR_MIN_BIAS            = 0.15f;
+    static constexpr float LPF_ALPHA    = 0.25f;
+    static constexpr float DIR_MIN_BIAS = 0.15f;
 
-    static constexpr float GYRO_YAW_MAX       = 30.0f;
-    static constexpr float GYRO_ROLL_MAX      = 30.0f;
-    static constexpr float ACCEL_ROLL_MAX     = 3.6f;
+    static constexpr float GYRO_YAW_MAX   = 30.0f;
+    static constexpr float GYRO_ROLL_MAX  = 30.0f;
+    static constexpr float ACCEL_ROLL_MAX = 3.6f;
 
     uint32_t& now;
     uint32_t  lastTimestamp = 0;
 
-    float  neutralAngle;
-    float& currentServoAngle;
-
-    float lastServoAngle  = NAN;
-    float filteredGyroYaw = 0.0f;
+    float filteredGyroYaw = NAN;
     float filteredGyroRoll = 0.0f;
     float filteredAccelRoll = 0.0f;
 
-    Direction lastServoDirection     = Direction::NEUTRAL;
     Direction currentCurveDir        = Direction::NEUTRAL;
     float     currentCurveBias       = 0.0f;
     Direction lastStableCurveDir     = Direction::NEUTRAL;
     uint8_t   stableCount            = 0;
-
-    Stream* logger;
 
     float getFilteredValue(float current, float last) {
         return last + LPF_ALPHA * (current - last);
@@ -67,48 +60,14 @@ private:
         return calculateNormalized(filteredAccelRoll, ACCEL_ROLL_MAX);
     }
 
-    void setLastData(FilteredData& filteredData) {
-        lastTimestamp = now;
-
-        if (isfinite(lastServoAngle)) {
-            lastServoDirection = getIntervalDirection(lastServoAngle, currentServoAngle, 0.0f);
-        } else {
-            lastServoDirection = getServoDirection();
-        }
-        lastServoAngle = currentServoAngle;
-    }
-
-    Direction getDirection(float deg) {
-        if (deg == 0.0f) return Direction::NEUTRAL;
-        return deg > 0.0f ? Direction::RIGHT : Direction::LEFT;
-    }
-
-    Direction getIntervalDirection(float from, float to, float neutralThreshold) {
-        if (fabsf(to - from) < neutralThreshold) return Direction::NEUTRAL;
-        return (from > to) ? Direction::LEFT : Direction::RIGHT;
-    }
-
-    Direction getServoDirection() {
-        if (currentServoAngle == neutralAngle) return Direction::NEUTRAL;
-        return currentServoAngle > neutralAngle ? Direction::LEFT : Direction::RIGHT;
-    }
-
-    void addWeight(Direction d, float w, float& bias) {
-        if (d == Direction::LEFT)  bias -= w;
-        if (d == Direction::RIGHT) bias += w;
-    }
-
 public:
-    CurveDetector(Stream* l,  uint32_t& currentTimestamp, float& csa, float na)
-    : logger(l), now(currentTimestamp), currentServoAngle(csa), neutralAngle(na) {}
-
+    CurveDetector(uint32_t& currentTimestamp) : now(currentTimestamp) {}
     Direction getCurveDirection() const { return currentCurveDir; }
     float     getCurveBias() const      { return currentCurveBias; }
 
     bool curveDetected(FilteredData& filteredData) {
         if (filteredData.isShock) return false;
-        if (!isfinite(lastServoAngle)) {
-            lastServoAngle      = currentServoAngle;
+        if (!isfinite(filteredGyroYaw)) {
             filteredGyroYaw     = filteredData.gyroYaw;
             filteredGyroRoll    = filteredData.gyroRoll;
             filteredAccelRoll   = filteredData.accelRollDeg;
@@ -151,7 +110,7 @@ public:
 
         currentCurveDir  = candidateDir;
         currentCurveBias = bias;
-        setLastData(filteredData);
+        lastTimestamp = now;
 
         return (currentCurveDir != Direction::NEUTRAL);
     }

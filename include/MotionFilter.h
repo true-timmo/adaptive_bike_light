@@ -25,13 +25,12 @@ class MotionFilter {
         static constexpr float IQR_DIFF_ROLL = 3.6f;
         static constexpr float IQR_CAP_YAW  = 30.0f;
 
-        static constexpr float SHOCK_CAP_ROLL  = 18.6f;
+        static constexpr float SHOCK_CAP_ROLL  = 36.6f;
         static constexpr float SHOCK_CAP_YAW   = 42.9f;
         static constexpr float SHOCK_DIFF_ROLL  = 7.6f;
         static constexpr float SHOCK_DIFF_YAW   = 5.3f;
 
-        uint32_t& now;
-        float&    dtRef;
+        Stream* logger;
 
         float lastGyroRoll = NAN;
         float lastGyroYaw = 0.0f;
@@ -39,9 +38,6 @@ class MotionFilter {
         float absAccelRollDiff = 0.0f;
         float absGyroRollDiff = 0.0f;
         float absGyroYawDiff = 0.0f;
-
-        Stream* logger;
-
 
         void handleNoise(FilteredData *filteredData) {
             if (filteredData->isShock) return;
@@ -70,7 +66,7 @@ class MotionFilter {
         }
 
         void handleShock(FilteredData *filteredData) {
-            bool shockByCap = filteredData->gyroYaw > SHOCK_CAP_YAW || filteredData->accelRollDeg > SHOCK_CAP_ROLL;
+            bool shockByCap = abs(filteredData->gyroYaw) > SHOCK_CAP_YAW || abs(filteredData->gyroRoll) > SHOCK_CAP_ROLL;
 
             if (shockByCap || absAccelRollDiff > SHOCK_DIFF_ROLL || absGyroYawDiff > SHOCK_DIFF_YAW) {
                 filteredData->isShock = true;
@@ -78,8 +74,7 @@ class MotionFilter {
         };
 
     public:
-        MotionFilter(Stream* l, uint32_t& currentTimestamp, float& lastToCurrent)
-        : now(currentTimestamp), dtRef(lastToCurrent), logger(l) {}
+        MotionFilter(Stream* l) : logger(l) {}
 
         FilteredData handle(MotionData motionData) {
             if (!isfinite(lastGyroRoll)) {

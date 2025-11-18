@@ -58,6 +58,7 @@ void splitCommand(String input, CMD &cmd, String &value) {
         value.trim();
     }
 }
+
 static void shutdownPeripherals() {
   ride.turnNeutral();
   delay(100);
@@ -172,8 +173,8 @@ void setup() {
 
 void loop() {
   if (logger.available()) {
-    String cmd = logger.readStringUntil('\n');
-    if (handleSerialCMD(cmd)) return;
+    String serialCmd = logger.readStringUntil('\n');
+    if (handleSerialCMD(serialCmd)) return;
   }
 
   ButtonEvent ev = button.checkEvent();
