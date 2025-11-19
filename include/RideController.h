@@ -131,10 +131,8 @@ class RideController {
             detector(currentTimestamp)
         {};
 
-        bool toggleCurveBoostState() {
-            curveBoostEnabled = !curveBoostEnabled;
-
-            return curveBoostEnabled;
+        void setCurveBoostState(bool _curveBoost) {
+            curveBoostEnabled = _curveBoost;
         }
 
         void setGearOffset(int8_t offset) {

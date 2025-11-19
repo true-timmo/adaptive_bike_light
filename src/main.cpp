@@ -135,7 +135,10 @@ bool handleSerialCMD(String input) {
       ride.setLoggingState(config.logging);
       break;
     case CMD::TOGGLE_BOOST:
-      logger.printf("Toggle curve boost: %s\n", (ride.toggleCurveBoostState()) ? F("ON") : F("OFF"));
+      config.curveBoost= !config.curveBoost;
+      eeprom.save(config);
+      ride.setCurveBoostState(config.curveBoost);
+      logger.printf("Toggle curve boost: %s\n", (config.curveBoost) ? F("ON") : F("OFF"));
       break;
     case CMD::SET_OFFSET:
       config.gearOffset = value.toInt();
