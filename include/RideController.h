@@ -244,12 +244,13 @@ class RideController {
             if (leanEnterDyn < 1.0f) leanEnterDyn = 1.0f;
 
             bool leanTrigger   = (absLean >= leanEnterDyn);
-            bool yawAssist     = (yawMag >= YAW_ENTER_MIN_DPS);     // etwas Lenken
+            bool curveAssist   = fabsf(1.0 - multiplier) > 0.3;
+            bool yawAssist     = (yawMag >= YAW_ENTER_MIN_DPS);    // etwas Lenken
             bool yawStrongOnly = (yawMag >= YAW_ENTER_STRONG_DPS);  // sehr starke Lenkung
 
             switch (state) {
                 case RideState::STRAIGHT:
-                    if ((leanTrigger && yawAssist) || yawStrongOnly) {
+                    if ((leanTrigger && yawAssist) || yawStrongOnly || curveAssist) {
                         if (currentTimestamp - stateTimerStart >= ENTER_HOLD_MS) {
                             state = RideState::CURVE;
                             stateTimerStart = currentTimestamp;
