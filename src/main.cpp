@@ -29,7 +29,8 @@ enum class CMD {
   TOGGLE_SERVO,
   TOGGLE_LOGS,
   TOGGLE_BOOST,
-  SET_OFFSET
+  SET_OFFSET,
+  SET_RATIO
 };
 
 static CMD resolveCMD(String cmd) {
@@ -41,7 +42,8 @@ static CMD resolveCMD(String cmd) {
   if (cmd == F("b")) return CMD::TOGGLE_BOOST;
   if (cmd == F("log")) return CMD::TOGGLE_LOGS;
   if (cmd == F("cfg")) return CMD::DUMP_CFG;
-  if (cmd == F("sos")) return CMD::SET_OFFSET;
+  if (cmd == F("so")) return CMD::SET_OFFSET;
+  if (cmd == F("sr")) return CMD::SET_RATIO;
 
   return CMD::HELP;
 }
@@ -141,13 +143,20 @@ bool handleSerialCMD(String input) {
       ride.setGearOffset(config.gearOffset);
       logger.printf("Mechanical gear offset set to: %d\n", config.gearOffset);
       break;
+    case CMD::SET_RATIO:
+      config.gearRatio = value.toFloat();
+      eeprom.save(config);
+      ride.setGearRatio(config.gearRatio);
+      logger.printf("Mechanical gear ratio set to: %d\n", config.gearRatio);
+      break;
     case CMD::DUMP_CFG:
-      logger.printf("CONFIG: offset=%.2f yaw=%.3f logging=%d servo=%d gain=%.3f gearOffset=%d\n",
+      logger.printf("CONFIG: offset=%.2f yaw=%.3f logging=%d servo=%d gearRatio=%.1f gearOffset=%d\n",
                         config.rollDegOffset, config.yawBias, (int)config.logging, (int)config.servo,
-                        config.gain, config.gearOffset);
+                        config.gearRatio, config.gearOffset);
       break;
       default:
-      logger.println(F("COMMANDS: l=left, r=right, n=neutral, c=calibrate, b=toggle boost, log=toggle logs, cfg=dump config"));
+      logger.println(F("COMMANDS:"));
+      logger.println(F("l=left, r=right, n=neutral, c=calibrate, b=toggle boost, log=toggle logs, cfg=dump config, so=set offset, sr=set ratio"));
       break;
   }
 

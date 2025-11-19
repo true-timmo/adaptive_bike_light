@@ -19,14 +19,15 @@
 
 struct SERVO {
   static constexpr int PIN                  = 20;
-  static constexpr int PWM_MIN              = 500;
+  static constexpr int PWM_MIN              = 850;
   static constexpr int PWM_MAX              = 2000;
   static constexpr float MAX_SPEED_DPS      = 240.0f;
+  static constexpr float MAX_DEG            = 180.0f;
   static constexpr float NEUTRAL_DEG        = 90.0f;
-  static constexpr float MIN_DEG            = 20.0f;
-  static constexpr float MAX_DEG            = 160.0f;
-  static constexpr float GAIN               = -5.5f;
-  static constexpr float WRITE_DEADBAND_DEG = 0.3f;
+  static constexpr float MIN_DEG            = 0.0f;
+  static constexpr float GEAR_RATIO         = 5.5f;
+  static constexpr float GEAR_SIGN          = -1.0f;
+  static constexpr float WRITE_DEADBAND_DEG = 1.0f;
 };
 
 enum class RideState { STRAIGHT, CURVE };
@@ -59,6 +60,7 @@ class RideController {
         CurveDetector detector;
 
         int8_t gearOffset         = 0;
+        float gearRatio           = 5.5f;
         float rollDegFiltered     = 0.0f;
         bool servoEnabled         = false;
         bool loggingEnabled       = false;
@@ -83,7 +85,7 @@ class RideController {
                 lastServoWriteMs = currentTimestamp;
 
                 if (fabsf(currentServoAngle - lastServoWrittenAngle) > SERVO::WRITE_DEADBAND_DEG) {
-                    servo->write(currentTimestamp);
+                    servo->write(currentServoAngle);
                     lastServoWrittenAngle = currentServoAngle;
 
                     return true;
@@ -139,25 +141,30 @@ class RideController {
             gearOffset = offset;
         }
 
+        void setGearRatio(float ratio) {
+            gearRatio = ratio;
+        }
+
         void setLoggingState(bool _state) {
             if (_state != loggingEnabled) {
                 loggingEnabled = _state;
             }
         }
 
-        void setServoState(bool _state) {
-            if (_state != servoEnabled) {
-                if (_state == true) {
-                    servo->setPeriodHertz(50);
-                    servo->attach(SERVO::PIN, SERVO::PWM_MIN, SERVO::PWM_MAX);                    
-                    logger->printf("Servo attached. PIN:%d\n", SERVO::PIN);
-                } else {
-                    servo->detach();
-                    logger->println(F("Servo detached."));
-                }
-
-                servoEnabled = _state;
+        void setServoState(bool _servoState) {
+            if (_servoState == true) {
+                servo->setPeriodHertz(50);
+                servo->attach(SERVO::PIN, SERVO::PWM_MIN, SERVO::PWM_MAX);                    
+                logger->printf("Servo attached. PIN:%d\n", SERVO::PIN);
+                delay(100);
+            } else {
+                delay(100);
+                servo->release();
+                servo->detach();
+                logger->println(F("Servo detached."));
             }
+
+            servoEnabled = _servoState;
         }
 
         void setTiming() {
@@ -222,7 +229,7 @@ class RideController {
             float yawWeight = (1.0f - rollFrac) * yawFrac;
             yawWeight = clampf(yawWeight, 0.0f, 0.5f);
             float blended = rollDegFiltered + (K_YAW * yawWeight) * filteredData.gyroYaw;
-            float targetDeg = neutralAngle() + SERVO::GAIN * blended;
+            float targetDeg = neutralAngle() + gearRatio * blended * SERVO::GEAR_SIGN;
 
             float multiplier = 1.0f;
             if (curveBoostEnabled && detector.curveDetected(filteredData)) {
