@@ -73,34 +73,33 @@ class RideController {
         uint32_t lastTimestamp    = 0;
         uint32_t shockHoldUntil   = 0;
 
-        void writeServoAngle(float target, float multiplier = 1.0f) {
+        bool writeServoAngle(float target, float multiplier = 1.0f) {
             const float step = (SERVO::MAX_SPEED_DPS * multiplier) / 1000 * SYSTEM_CLK_MS;
             const float delta  = clampf(target - currentServoAngle, -step, +step);
             const float next   = clampf(currentServoAngle + delta, minAngle(), maxAngle());
             currentServoAngle = next;
 
             if (servoEnabled && currentTimestamp - lastServoWriteMs >= SERVO_CLK_MS) {
+                lastServoWriteMs = currentTimestamp;
+
                 if (fabsf(currentServoAngle - lastServoWrittenAngle) > SERVO::WRITE_DEADBAND_DEG) {
                     servo->write(currentTimestamp);
                     lastServoWrittenAngle = currentServoAngle;
-                }
 
-                if (loggingEnabled) {
-                    logger->printf("|%u|%.1f|%.1f|%.1f|%+.1f\n",
-                        currentTimestamp, target, currentServoAngle, lastServoWrittenAngle, multiplier);
+                    return true;
                 }
-
-                lastServoWriteMs = currentTimestamp;
             }
+
+            return false;
         };
 
-        void logEverything(float gyroYaw, float gyroRoll, float accRollDeg, float accRollFiltered, float yawFrac, RideState rideState, float multiplier, float servoPos ) {
+        void logEverything(float gyroYaw, float gyroRoll, float accRollDeg, float accRollFiltered, float yawFrac, RideState rideState, float multiplier, float servoPos, bool servoInSync) {
             static uint32_t lastLogMs = currentTimestamp;
 
             if (loggingEnabled && currentTimestamp - lastLogMs >= 20) {
                 lastLogMs = currentTimestamp;
-                logger->printf("|%+.2f|%+.2f|%+.2f|%+.2f|%+.1f|%+.1f\n",
-                gyroYaw, gyroRoll, accRollDeg, accRollFiltered, multiplier, servoPos);
+                logger->printf("|%+.2f|%+.2f|%+.2f|%+.2f|%+.1f|%+.1f|%d\n",
+                gyroYaw, gyroRoll, accRollDeg, accRollFiltered, multiplier, servoPos, servoInSync);
             }
         };
 
@@ -278,12 +277,12 @@ class RideController {
                 targetDeg = clampf(targetDeg, minAngle(), maxAngle());
             }
 
-            writeServoAngle(targetDeg, multiplier);
+            bool servoWritten = writeServoAngle(targetDeg, multiplier);
 
-            // logEverything(
-            //     filteredData.gyroYaw, filteredData.gyroRoll, filteredData.accelRollDeg,
-            //     rollDegFiltered, yawFrac, state, multiplier, targetDeg
-            // );
+            logEverything(
+                filteredData.gyroYaw, filteredData.gyroRoll, filteredData.accelRollDeg,
+                rollDegFiltered, yawFrac, state, multiplier, targetDeg, servoWritten
+            );
 
             delayNext();
         }
