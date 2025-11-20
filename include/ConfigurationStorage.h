@@ -3,9 +3,8 @@
 #include <EEPROM.h>
 
 struct ConfigBlob {
-    uint32_t magic = 0xC0FFEE21;
-    uint8_t  version = 7;
-    float    rollDegOffset = 0.0f;
+    uint32_t deviceID = 0xC0FFEE42;
+    uint8_t  version = 1;
     float    yawBias = 0.0f;
     bool     logging = false;
     bool     servo = false;
@@ -19,7 +18,8 @@ struct ConfigBlob {
 class ConfigurationStorage {
     private:
         static constexpr int EEPROM_ADDR = 0;
-        static constexpr uint8_t BLOB_VERSION = 7;
+        static constexpr uint32_t DEVICE_ID = 0xC0FFEE42;
+        static constexpr uint8_t BLOB_VERSION = 1;
 
         Stream *logger;
         bool initialized = false;
@@ -33,9 +33,8 @@ class ConfigurationStorage {
 
         uint16_t crcConfig(const ConfigBlob& b) {
             uint16_t c = 0;
-            c = crc16_acc((const uint8_t*)&b.magic,   sizeof b.magic);
+            c = crc16_acc((const uint8_t*)&b.deviceID,   sizeof b.deviceID);
             c = crc16_acc((const uint8_t*)&b.version, sizeof b.version) + c;
-            c = crc16_acc((const uint8_t*)&b.rollDegOffset, sizeof b.rollDegOffset) + c;
             c = crc16_acc((const uint8_t*)&b.yawBias, sizeof b.yawBias) + c;
             c = crc16_acc((const uint8_t*)&b.logging, sizeof b.logging) + c;
             c = crc16_acc((const uint8_t*)&b.servo, sizeof b.servo) + c;
@@ -56,11 +55,18 @@ class ConfigurationStorage {
             return initialized;
         }
 
+        void dump(ConfigBlob& blob) {
+            logger->printf("EEPROM:\n  ver=%u logging=%d servo=%d\n  gearRatio=%.3f gearOffset=%d curveBoost=%d\n  size=%u\n",
+                        blob.version, (int)blob.logging, (int)blob.servo, 
+                        blob.gearRatio, blob.gearOffset, (int)blob.curveBoost,
+                        (unsigned)sizeof(blob));
+        }
+
         ConfigBlob load() {
-            logger->println("EEPROM: load calibration");
+            logger->println("EEPROM: load config");
             ConfigBlob blob{};
             EEPROM.get(0, blob);
-            bool ok = (blob.magic == 0xC0FFEE21) && (blob.version == BLOB_VERSION);
+            bool ok = (blob.deviceID == DEVICE_ID) && (blob.version == BLOB_VERSION);
             if (ok) {
                 uint16_t expectedCrc = crcConfig(blob);
                 ok = (expectedCrc == blob.crc);
@@ -73,16 +79,15 @@ class ConfigurationStorage {
         };
 
         bool save(ConfigBlob& blob) {
-            logger->println("EEPROM: save calibration");
+            logger->println("EEPROM: save config");
             blob.crc = crcConfig(blob);
             EEPROM.put(EEPROM_ADDR, blob);
             if (!EEPROM.commit()) {
                 logger->println("EEPROM: commit FAILED");
                 return false;
             }
-            logger->printf("EEPROM: saved! magic=%08X ver=%u offset=%.2f bias=%.3f logging=%d servo=%d gearRatio=%.3f gearOffset=%d crc=%u size=%u\n",
-                        blob.magic, blob.version, blob.rollDegOffset, blob.yawBias,
-                        (int)blob.logging, (int)blob.servo, blob.gearRatio, blob.gearOffset, blob.crc, (unsigned)sizeof(blob));
+            dump(blob);
+            
             return true;
         };
 };

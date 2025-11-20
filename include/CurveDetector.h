@@ -71,11 +71,6 @@ public:
             filteredGyroYaw     = filteredData.gyroYaw;
             filteredGyroRoll    = filteredData.gyroRoll;
             filteredAccelRoll   = filteredData.accelRollDeg;
-            lastStableCurveDir  = Direction::NEUTRAL;
-            stableCount         = 0;
-            currentCurveDir     = Direction::NEUTRAL;
-            currentCurveBias    = 0.0f;
-            lastTimestamp       = now;
             return false;
         }
 

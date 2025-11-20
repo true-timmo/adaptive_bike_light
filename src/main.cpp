@@ -9,6 +9,7 @@
 #define I2C_SDA 9
 #define I2C_SCL 10
 #define BUTTON_PIN D3
+#define BATTERY_PIN D0
 #define BT_NAME "Dynamic BeamAssist"
 
 Servo g_servo;
@@ -30,8 +31,26 @@ enum class CMD {
   TOGGLE_LOGS,
   TOGGLE_BOOST,
   SET_OFFSET,
-  SET_RATIO
+  SET_RATIO,
+  BATTERY
 };
+
+String lookupBatteryStatus() {
+  int raw = analogRead(BATTERY_PIN);
+  float v_adc = raw * (3.3 / 4095.0);
+  float v_batt = v_adc * 2.0;
+
+  if (v_batt >= 4.40) return "charging";
+  if (v_batt >= 4.20) return "100%";
+  if (v_batt >= 4.08) return "80%";
+  if (v_batt >= 3.98) return "60%";
+  if (v_batt >= 3.92) return "50%";
+  if (v_batt >= 3.82) return "30%";
+  if (v_batt >= 3.73) return "10%";
+  if (v_batt >= 3.50) return "5%";
+
+  return "0%";
+}
 
 static CMD resolveCMD(String cmd) {
   if (cmd == F("r")) return CMD::RIGHT;
@@ -44,6 +63,7 @@ static CMD resolveCMD(String cmd) {
   if (cmd == F("cfg")) return CMD::DUMP_CFG;
   if (cmd == F("so")) return CMD::SET_OFFSET;
   if (cmd == F("sr")) return CMD::SET_RATIO;
+  if (cmd == F("v")) return CMD::BATTERY;
 
   return CMD::HELP;
 }
@@ -124,6 +144,9 @@ bool handleSerialCMD(String input) {
     case CMD::CALIBRATE:
       ride.runCalibration();
       break;
+    case CMD::BATTERY:
+      logger.printf("Battery status: %s\n", lookupBatteryStatus());
+      break;
     case CMD::TOGGLE_SERVO:
       config.servo = !config.servo;
       eeprom.save(config);
@@ -153,13 +176,11 @@ bool handleSerialCMD(String input) {
       logger.printf("Mechanical gear ratio set to: %d\n", config.gearRatio);
       break;
     case CMD::DUMP_CFG:
-      logger.printf("CONFIG: offset=%.2f yaw=%.3f logging=%d servo=%d gearRatio=%.1f gearOffset=%d\n",
-                        config.rollDegOffset, config.yawBias, (int)config.logging, (int)config.servo,
-                        config.gearRatio, config.gearOffset);
+      eeprom.dump(config);
       break;
-      default:
+    default:
       logger.println(F("COMMANDS:"));
-      logger.println(F("l=left, r=right, n=neutral, c=calibrate, b=toggle boost, log=toggle logs, cfg=dump config, so=set offset, sr=set ratio"));
+      logger.println(F("  l=left, r=right, n=neutral\n  c=calibrate, b=toggle boost\n  log=toggle logs, cfg=dump config\n  so=set offset, sr=set ratio\n  v=battery voltage"));
       break;
   }
 
@@ -171,6 +192,9 @@ void setup() {
   eeprom.begin(64);
   delay(100);
   
+  analogReadResolution(12);  // 0–4095
+  analogSetAttenuation(ADC_11db); // bis ca. 3.3V
+
   logger.begin(BT_NAME);
   sensor.init(I2C_SDA, I2C_SCL);
 
