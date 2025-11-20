@@ -35,12 +35,18 @@ enum class CMD {
   BATTERY
 };
 
-String lookupBatteryStatus() {
+float lookupBatteryVoltage() {
   int raw = analogRead(BATTERY_PIN);
   float v_adc = raw * (3.3 / 4095.0);
   float v_batt = v_adc * 2.0;
 
-  if (v_batt >= 4.40) return "charging";
+  return v_batt;
+}
+
+String lookupBatteryStatus() {
+  float v_batt = lookupBatteryVoltage();
+
+  if (v_batt >= 4.41) return "charging";
   if (v_batt >= 4.20) return "100%";
   if (v_batt >= 4.08) return "80%";
   if (v_batt >= 3.98) return "60%";
@@ -145,7 +151,7 @@ bool handleSerialCMD(String input) {
       ride.runCalibration();
       break;
     case CMD::BATTERY:
-      logger.printf("Battery status: %s\n", lookupBatteryStatus());
+      logger.printf("Battery status: %s, Voltage: %.2fV\n", lookupBatteryStatus(), lookupBatteryVoltage());
       break;
     case CMD::TOGGLE_SERVO:
       config.servo = !config.servo;
