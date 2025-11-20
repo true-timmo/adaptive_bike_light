@@ -1,6 +1,5 @@
 #pragma once
 #include <Arduino.h>
-#include "MotionFilter.h"
 
 #ifndef ESP32_Servo_h
 #include <ESP32Servo.h>
@@ -10,21 +9,25 @@
 #include "MotionSensor.h"
 #endif
 
+#ifndef _MotionFilter_h
+#include "MotionFilter.h"
+#endif
+
 #ifndef CurveDetector_h
 #include "CurveDetector.h"
 #endif
 
 struct SERVO {
   static constexpr int PIN                  = 20;
-  static constexpr int PWM_MIN              = 1000;
+  static constexpr int PWM_MIN              = 850;
   static constexpr int PWM_MAX              = 2000;
   static constexpr float MAX_SPEED_DPS      = 240.0f;
+  static constexpr float MAX_DEG            = 180.0f;
   static constexpr float NEUTRAL_DEG        = 90.0f;
-  static constexpr float MECHANICAL_OFFSET  = -0.0f;
-  static constexpr float MIN_DEG            = 20.0f;
-  static constexpr float MAX_DEG            = 160.0f;
-  static constexpr float GAIN               = -6.0f;
-  static constexpr float WRITE_DEADBAND_DEG = 0.3f;
+  static constexpr float MIN_DEG            = 0.0f;
+  static constexpr float GEAR_RATIO         = 5.5f;
+  static constexpr float GEAR_SIGN          = -1.0f;
+  static constexpr float WRITE_DEADBAND_DEG = 1.0f;
 };
 
 enum class RideState { STRAIGHT, CURVE };
@@ -43,9 +46,11 @@ class RideController {
         static constexpr float YAW_ENTER_MIN_DPS    = 1.5f;   // Yaw, die „echte“ Lenkung andeutet
         static constexpr float YAW_ENTER_STRONG_DPS = 15.0f;  // starke Lenkbewegung => Kurve auch ohne viel Lean
 
-        // --- „Schwanken“ glätten ---
-        static constexpr float LPF_TAU_S           = 0.12f;  // größer = stärker geglättet
-        static constexpr float OUTPUT_DEADBAND_DEG = 1.2f;
+        static constexpr float SYSTEM_CLK_MS = 5.0f;
+        static constexpr float SYSTEM_DT_S = 0.001f * SYSTEM_CLK_MS;
+        static constexpr float SERVO_CLK_MS = 20.0f;
+        static constexpr float LPF_TAU_S = 0.12f;
+        static constexpr float CURVE_BOOST_FACTOR = 0.5f;
 
         Stream *logger;
         MotionSensor *sensor;
@@ -54,38 +59,49 @@ class RideController {
         MotionFilter filter;
         CurveDetector detector;
 
+        int8_t gearOffset         = 0;
+        float gearRatio           = 5.5f;
         float rollDegFiltered     = 0.0f;
         bool servoEnabled         = false;
         bool loggingEnabled       = false;
+        bool curveBoostEnabled    = false;
         float currentServoAngle   = SERVO::NEUTRAL_DEG;
+
+        float lastServoWrittenAngle = SERVO::NEUTRAL_DEG;
+        uint32_t lastServoWriteMs   = 0;
 
         uint32_t stateTimerStart  = 0;
         uint32_t currentTimestamp = 0;
         uint32_t lastTimestamp    = 0;
-        float lastToCurrent       = 0.0f;
         uint32_t shockHoldUntil   = 0;
 
-        void writeServoAngle(float target, float multiplier = 1.0f) {
-            const float step   = (SERVO::MAX_SPEED_DPS * multiplier) * lastToCurrent;
+        bool writeServoAngle(float target, float multiplier = 1.0f) {
+            const float step = (SERVO::MAX_SPEED_DPS * multiplier) / 1000 * SYSTEM_CLK_MS;
             const float delta  = clampf(target - currentServoAngle, -step, +step);
             const float next   = clampf(currentServoAngle + delta, minAngle(), maxAngle());
+            currentServoAngle = next;
 
-            // Slew-Rate-Limiter + optional „nur schreiben, wenn’s sich lohnt“
-            if (fabsf(next - currentServoAngle) > SERVO::WRITE_DEADBAND_DEG) {
-                currentServoAngle = next;
-                servo->write(currentServoAngle);
+            if (servoEnabled && currentTimestamp - lastServoWriteMs >= SERVO_CLK_MS) {
+                lastServoWriteMs = currentTimestamp;
+
+                if (fabsf(currentServoAngle - lastServoWrittenAngle) > SERVO::WRITE_DEADBAND_DEG) {
+                    servo->write(currentServoAngle);
+                    lastServoWrittenAngle = currentServoAngle;
+
+                    return true;
+                }
             }
+
+            return false;
         };
 
-        void logEverything(float gyroYaw, float gyroRoll, float accRollDeg, float accRollFiltered, float yawFrac, RideState rideState, float servoPos) {
-            if (!loggingEnabled) return;
-
+        void logEverything(float gyroYaw, float gyroRoll, float accRollDeg, float accRollFiltered, float yawFrac, RideState rideState, float multiplier, float servoPos, bool servoInSync) {
             static uint32_t lastLogMs = currentTimestamp;
 
-            if (currentTimestamp - lastLogMs >= 20) {
+            if (loggingEnabled && currentTimestamp - lastLogMs >= 20) {
                 lastLogMs = currentTimestamp;
-                logger->printf("%+.2f|%+.2f|%+.2f|%+.2f|%+.2f|%d|%+.1f\n",
-                gyroYaw, gyroRoll, accRollDeg, accRollFiltered, yawFrac, rideState, servoPos);
+                logger->printf("|%+.2f|%+.2f|%+.2f|%+.2f|%+.1f|%+.1f|%d\n",
+                gyroYaw, gyroRoll, accRollDeg, accRollFiltered, multiplier, servoPos, servoInSync);
             }
         };
 
@@ -94,16 +110,16 @@ class RideController {
         };
 
         float neutralAngle() const {
-            return SERVO::NEUTRAL_DEG + SERVO::MECHANICAL_OFFSET;
+            return SERVO::NEUTRAL_DEG + gearOffset;
         }
 
         float minAngle() {
-            return SERVO::MIN_DEG + SERVO::MECHANICAL_OFFSET;
+            return SERVO::MIN_DEG + fabsf(gearOffset);
 
         };
 
         float maxAngle() {
-            return SERVO::MAX_DEG + SERVO::MECHANICAL_OFFSET;
+            return SERVO::MAX_DEG - fabsf(gearOffset);
         }
 
     public:
@@ -111,42 +127,54 @@ class RideController {
             sensor(s),
             servo(v),
             logger(l),
-            filter(l, currentTimestamp, lastToCurrent),
-            detector(l, currentTimestamp, currentServoAngle, neutralAngle())
+            filter(l),
+            detector(currentTimestamp)
         {};
 
-        void init() {
-            runCalibration();
+        void setCurveBoostState(bool _curveBoost) {
+            curveBoostEnabled = _curveBoost;
         }
 
-        void setLoggingState(bool state) {
-            if (state != loggingEnabled) {
-                loggingEnabled = state;
+        void setGearOffset(int8_t offset) {
+            gearOffset = offset;
+        }
+
+        void setGearRatio(float ratio) {
+            gearRatio = ratio;
+        }
+
+        void setLoggingState(bool _state) {
+            if (_state != loggingEnabled) {
+                loggingEnabled = _state;
             }
         }
 
-        void setServoState(bool state) {
-            if (state != servoEnabled) {
-                if (state == true) {
-                    servo->setPeriodHertz(50);
-                    servo->attach(SERVO::PIN, SERVO::PWM_MIN, SERVO::PWM_MAX);                    
-                    logger->printf("Servo attached. PIN:%d\n", SERVO::PIN);
-                } else {
-                    servo->detach();
-                    logger->println(F("Servo detached."));
-                }
-
-                servoEnabled = state;
+        void setServoState(bool _servoState) {
+            if (_servoState == true) {
+                servo->setPeriodHertz(50);
+                servo->attach(SERVO::PIN, SERVO::PWM_MIN, SERVO::PWM_MAX);                    
+                logger->printf("Servo attached. PIN:%d\n", SERVO::PIN);
+                delay(100);
+            } else {
+                delay(100);
+                servo->release();
+                servo->detach();
+                logger->println(F("Servo detached."));
             }
+
+            servoEnabled = _servoState;
         }
 
         void setTiming() {
             currentTimestamp = millis();
-            lastToCurrent = (currentTimestamp - lastTimestamp) / 1000.0f;
-            if (lastToCurrent <= 0.0f || lastToCurrent > 0.5f) {
-                lastToCurrent = 0.02f;
-            }
             lastTimestamp = currentTimestamp;
+        }
+
+        void delayNext() {
+            uint32_t elapsed = millis() - currentTimestamp;
+            if (elapsed < SYSTEM_CLK_MS) {
+                delay((uint32_t)(SYSTEM_CLK_MS - elapsed));
+            }
         }
 
         void runCalibration() {
@@ -160,10 +188,6 @@ class RideController {
             logger->printf("X-Offset = %.2f°, Y-Offset = %.2f°, Z-Offset = %.2f°\n", a.x, a.y, a.z);
             logger->printf("Gyro-X-Bias: %.3f °/s, Gyro-Z-Bias: %.3f °/s\n", g.gyroRoll, g.gyroYaw);
 
-            turnLeft();
-            delay(500);
-            turnRight();
-            delay(500);
             turnNeutral();
         };
 
@@ -191,19 +215,31 @@ class RideController {
 
             // Adaptive Glättung: je kleiner Yaw, desto stärkeres LPF (Gerade ruhiger) ---
             float yawMag   = fabsf(filteredData.gyroYaw);
-            float yawFrac  = fminf(yawMag / YAW_NORM, 1.0f);                   // 0..1
-            float dynTau = LPF_TAU_S * (1.0f + 0.6f * (1.0f - yawFrac)); // 0.25..0.4 s
+            float yawFrac  = fminf(yawMag / YAW_NORM, 1.0f);
+            float dynTau = LPF_TAU_S * (1.0f + 0.6f * (1.0f - yawFrac));
             if (state == RideState::STRAIGHT) {
-                dynTau *= 1.5f; // in Gerade stärker glätten
+                dynTau *= 1.5f;
             }
-            float alpha    = lastToCurrent / (dynTau + lastToCurrent);
+            float alpha = SYSTEM_DT_S / (dynTau + SYSTEM_DT_S);
 
             rollDegFiltered += alpha * (filteredData.accelRollDeg - rollDegFiltered);
             float rollFrac = fminf(fabsf(rollDegFiltered) / ROLL_NORM, 1.0f);
             float yawWeight = (1.0f - rollFrac) * yawFrac;
             yawWeight = clampf(yawWeight, 0.0f, 0.5f);
             float blended = rollDegFiltered + (K_YAW * yawWeight) * filteredData.gyroYaw;
-            float targetDeg = neutralAngle() + SERVO::GAIN * blended;
+            float targetDeg = neutralAngle() + gearRatio * blended * SERVO::GEAR_SIGN;
+
+            float multiplier = 1.0f;
+            if (curveBoostEnabled && detector.curveDetected(filteredData)) {
+                float curveBias = detector.getCurveBias();
+                int servoDir = (targetDeg > currentServoAngle) ? -1 : +1;
+
+                if (curveBias * servoDir > 0.0f) {
+                    multiplier = (1.0f + CURVE_BOOST_FACTOR * fabsf(curveBias));
+                } else if (curveBias * servoDir < 0.0f) {
+                    multiplier = (1.0f - CURVE_BOOST_FACTOR * fabsf(curveBias));
+                }
+            }
 
             // Zustandserkennung (Hysterese) – Eintritt erleichtern, wenn Yaw groß ---
             float absLean = fabsf(rollDegFiltered);
@@ -212,12 +248,13 @@ class RideController {
             if (leanEnterDyn < 1.0f) leanEnterDyn = 1.0f;
 
             bool leanTrigger   = (absLean >= leanEnterDyn);
-            bool yawAssist     = (yawMag >= YAW_ENTER_MIN_DPS);     // etwas Lenken
+            bool curveAssist   = fabsf(1.0 - multiplier) > 0.3;
+            bool yawAssist     = (yawMag >= YAW_ENTER_MIN_DPS);    // etwas Lenken
             bool yawStrongOnly = (yawMag >= YAW_ENTER_STRONG_DPS);  // sehr starke Lenkung
 
             switch (state) {
                 case RideState::STRAIGHT:
-                    if ((leanTrigger && yawAssist) || yawStrongOnly) {
+                    if ((leanTrigger && yawAssist) || yawStrongOnly || curveAssist) {
                         if (currentTimestamp - stateTimerStart >= ENTER_HOLD_MS) {
                             state = RideState::CURVE;
                             stateTimerStart = currentTimestamp;
@@ -245,11 +282,13 @@ class RideController {
                 targetDeg = clampf(targetDeg, minAngle(), maxAngle());
             }
 
+            bool servoWritten = writeServoAngle(targetDeg, multiplier);
+
             logEverything(
                 filteredData.gyroYaw, filteredData.gyroRoll, filteredData.accelRollDeg,
-                rollDegFiltered, yawFrac, state, targetDeg
+                rollDegFiltered, yawFrac, state, multiplier, targetDeg, servoWritten
             );
 
-            writeServoAngle(targetDeg);
+            delayNext();
         }
 };

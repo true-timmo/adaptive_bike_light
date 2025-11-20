@@ -19,7 +19,7 @@ Button button = Button(BUTTON_PIN, LOW);
 RideController ride = RideController(&sensor, &g_servo, &logger);
 ConfigBlob config;
 
-enum CMD {
+enum class CMD {
   LEFT,
   RIGHT,
   NEUTRAL,
@@ -27,7 +27,10 @@ enum CMD {
   CALIBRATE,
   HELP,
   TOGGLE_SERVO,
-  TOGGLE_LOGS
+  TOGGLE_LOGS,
+  TOGGLE_BOOST,
+  SET_OFFSET,
+  SET_RATIO
 };
 
 static CMD resolveCMD(String cmd) {
@@ -36,10 +39,26 @@ static CMD resolveCMD(String cmd) {
   if (cmd == F("n")) return CMD::NEUTRAL;
   if (cmd == F("c")) return CMD::CALIBRATE;
   if (cmd == F("s")) return CMD::TOGGLE_SERVO;
+  if (cmd == F("b")) return CMD::TOGGLE_BOOST;
   if (cmd == F("log")) return CMD::TOGGLE_LOGS;
   if (cmd == F("cfg")) return CMD::DUMP_CFG;
+  if (cmd == F("so")) return CMD::SET_OFFSET;
+  if (cmd == F("sr")) return CMD::SET_RATIO;
 
   return CMD::HELP;
+}
+
+void splitCommand(String input, CMD &cmd, String &value) {
+    int spacePos = input.indexOf(' ');
+
+    if (spacePos == -1) {
+        cmd = resolveCMD(input);
+        value = "";
+    } else {
+        cmd   = resolveCMD(input.substring(0, spacePos));
+        value = input.substring(spacePos + 1);
+        value.trim();
+    }
 }
 
 static void shutdownPeripherals() {
@@ -88,7 +107,9 @@ bool handleSerialCMD(String input) {
   input.trim();
 
   if (input.isEmpty()) return false;
-  CMD cmd = resolveCMD(input);
+
+  CMD cmd; String value;
+  splitCommand(input, cmd, value);
 
   switch (cmd) {
     case CMD::LEFT:
@@ -113,13 +134,32 @@ bool handleSerialCMD(String input) {
       eeprom.save(config);
       ride.setLoggingState(config.logging);
       break;
+    case CMD::TOGGLE_BOOST:
+      config.curveBoost= !config.curveBoost;
+      eeprom.save(config);
+      ride.setCurveBoostState(config.curveBoost);
+      logger.printf("Toggle curve boost: %s\n", (config.curveBoost) ? F("ON") : F("OFF"));
+      break;
+    case CMD::SET_OFFSET:
+      config.gearOffset = value.toInt();
+      eeprom.save(config);
+      ride.setGearOffset(config.gearOffset);
+      logger.printf("Mechanical gear offset set to: %d\n", config.gearOffset);
+      break;
+    case CMD::SET_RATIO:
+      config.gearRatio = value.toFloat();
+      eeprom.save(config);
+      ride.setGearRatio(config.gearRatio);
+      logger.printf("Mechanical gear ratio set to: %d\n", config.gearRatio);
+      break;
     case CMD::DUMP_CFG:
-      logger.printf("CONFIG: offset=%.2f yaw=%.3f logging=%d servo=%d gain=%.3f gearOffset=%.3f\n",
+      logger.printf("CONFIG: offset=%.2f yaw=%.3f logging=%d servo=%d gearRatio=%.1f gearOffset=%d\n",
                         config.rollDegOffset, config.yawBias, (int)config.logging, (int)config.servo,
-                        config.gain, config.gearOffset);
+                        config.gearRatio, config.gearOffset);
       break;
       default:
-      logger.println(F("COMMANDS: l=left, r=right, n=neutral, c=calibrate, cfg=dump config"));
+      logger.println(F("COMMANDS:"));
+      logger.println(F("l=left, r=right, n=neutral, c=calibrate, b=toggle boost, log=toggle logs, cfg=dump config, so=set offset, sr=set ratio"));
       break;
   }
 
@@ -133,20 +173,20 @@ void setup() {
   
   logger.begin(BT_NAME);
   sensor.init(I2C_SDA, I2C_SCL);
-  ride.init();
 
   config = eeprom.load();
   ride.setLoggingState(config.logging);
   ride.setServoState(config.servo);
-
+  ride.setGearOffset(config.gearOffset);
+  ride.runCalibration();
 
   logger.println("Dynamic Beam Assist ready!");
 }
 
 void loop() {
   if (logger.available()) {
-    String cmd = logger.readStringUntil('\n');
-    if (handleSerialCMD(cmd)) return;
+    String serialCmd = logger.readStringUntil('\n');
+    if (handleSerialCMD(serialCmd)) return;
   }
 
   ButtonEvent ev = button.checkEvent();

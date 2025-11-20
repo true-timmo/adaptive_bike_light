@@ -4,13 +4,14 @@
 
 struct ConfigBlob {
     uint32_t magic = 0xC0FFEE21;
-    uint8_t  version = 4;
+    uint8_t  version = 7;
     float    rollDegOffset = 0.0f;
     float    yawBias = 0.0f;
     bool     logging = false;
-    bool     servo = true;
-    float    gearOffset = -7.0f;
-    float    gain = -5.5f;
+    bool     servo = false;
+    int8_t   gearOffset = 0;
+    float    gearRatio = 5.5f;
+    bool     curveBoost = false;
     uint16_t crc = 0;
 };
 
@@ -18,7 +19,7 @@ struct ConfigBlob {
 class ConfigurationStorage {
     private:
         static constexpr int EEPROM_ADDR = 0;
-        static constexpr uint8_t BLOB_VERSION = 4;
+        static constexpr uint8_t BLOB_VERSION = 7;
 
         Stream *logger;
         bool initialized = false;
@@ -39,7 +40,8 @@ class ConfigurationStorage {
             c = crc16_acc((const uint8_t*)&b.logging, sizeof b.logging) + c;
             c = crc16_acc((const uint8_t*)&b.servo, sizeof b.servo) + c;
             c = crc16_acc((const uint8_t*)&b.gearOffset, sizeof b.gearOffset) + c;
-            c = crc16_acc((const uint8_t*)&b.gain, sizeof b.gain) + c;
+            c = crc16_acc((const uint8_t*)&b.gearRatio, sizeof b.gearRatio) + c;
+            c = crc16_acc((const uint8_t*)&b.curveBoost, sizeof b.curveBoost) + c;
 
             return c;
         }
@@ -78,9 +80,9 @@ class ConfigurationStorage {
                 logger->println("EEPROM: commit FAILED");
                 return false;
             }
-            logger->printf("EEPROM: saved! magic=%08X ver=%u offset=%.2f bias=%.3f logging=%d servo=%d gain=%.3f crc=%u size=%u\n",
+            logger->printf("EEPROM: saved! magic=%08X ver=%u offset=%.2f bias=%.3f logging=%d servo=%d gearRatio=%.3f gearOffset=%d crc=%u size=%u\n",
                         blob.magic, blob.version, blob.rollDegOffset, blob.yawBias,
-                        (int)blob.logging, (int)blob.servo, blob.gain, blob.crc, (unsigned)sizeof(blob));
+                        (int)blob.logging, (int)blob.servo, blob.gearRatio, blob.gearOffset, blob.crc, (unsigned)sizeof(blob));
             return true;
         };
 };
