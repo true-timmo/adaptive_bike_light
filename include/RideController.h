@@ -49,6 +49,7 @@ class RideController {
         static constexpr float SYSTEM_CLK_MS = 5.0f;
         static constexpr float SYSTEM_DT_S = 0.001f * SYSTEM_CLK_MS;
         static constexpr float SERVO_CLK_MS = 20.0f;
+        static constexpr float DEVICE_TIMEOUT_MS = 1000.0f * 120.0f;
         static constexpr float LPF_TAU_S = 0.12f;
         static constexpr float CURVE_BOOST_FACTOR = 0.5f;
 
@@ -81,15 +82,15 @@ class RideController {
             const float next   = clampf(currentServoAngle + delta, minAngle(), maxAngle());
             currentServoAngle = next;
 
-            if (servoEnabled && currentTimestamp - lastServoWriteMs >= SERVO_CLK_MS) {
+            if (servoEnabled 
+                && currentTimestamp - lastServoWriteMs >= SERVO_CLK_MS
+                && fabsf(currentServoAngle - lastServoWrittenAngle) > SERVO::WRITE_DEADBAND_DEG
+            ) {
                 lastServoWriteMs = currentTimestamp;
+                servo->write(currentServoAngle);
+                lastServoWrittenAngle = currentServoAngle;
 
-                if (fabsf(currentServoAngle - lastServoWrittenAngle) > SERVO::WRITE_DEADBAND_DEG) {
-                    servo->write(currentServoAngle);
-                    lastServoWrittenAngle = currentServoAngle;
-
-                    return true;
-                }
+                return true;
             }
 
             return false;
@@ -130,6 +131,10 @@ class RideController {
             filter(l),
             detector(currentTimestamp)
         {};
+
+        bool isTimedOut() {
+            return currentTimestamp - lastServoWriteMs >= DEVICE_TIMEOUT_MS;
+        }
 
         void setCurveBoostState(bool _curveBoost) {
             curveBoostEnabled = _curveBoost;
