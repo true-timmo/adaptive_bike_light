@@ -38,22 +38,25 @@ enum class CMD {
 float lookupBatteryVoltage() {
   int raw = analogRead(BATTERY_PIN);
   float v_adc = raw * (3.3 / 4095.0);
-  float v_batt = v_adc * 2.0;
+  const float TEILER = 1.805;
 
-  return v_batt;
+  return v_adc * TEILER;
 }
 
 String lookupBatteryStatus() {
   float v_batt = lookupBatteryVoltage();
 
-  if (v_batt >= 4.41) return "charging";
-  if (v_batt >= 4.20) return "100%";
-  if (v_batt >= 4.08) return "80%";
-  if (v_batt >= 3.98) return "60%";
-  if (v_batt >= 3.92) return "50%";
-  if (v_batt >= 3.82) return "30%";
-  if (v_batt >= 3.73) return "10%";
-  if (v_batt >= 3.50) return "5%";
+  if (v_batt >= 4.15) return "100%";
+  if (v_batt >= 4.10) return "90%";
+  if (v_batt >= 4.05) return "80%";
+  if (v_batt >= 4.00) return "70%";
+  if (v_batt >= 3.95) return "60%";
+  if (v_batt >= 3.90) return "50%";
+  if (v_batt >= 3.85) return "40%";
+  if (v_batt >= 3.80) return "30%";
+  if (v_batt >= 3.75) return "20%";
+  if (v_batt >= 3.70) return "10%";
+  if (v_batt >= 3.55) return "5%";
 
   return "0%";
 }
