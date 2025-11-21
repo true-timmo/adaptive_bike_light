@@ -222,11 +222,11 @@ void loop() {
     if (handleSerialCMD(serialCmd)) return;
   }
 
-  ride.setTiming();
-  ButtonEvent ev = ride.isTimedOut() ? ButtonEvent::BUTTON_SHORT : button.checkEvent();
-
+  ButtonEvent ev = button.checkEvent();
   handleLoggingOnLongPress(ev);
   handleSleepOnShortPress(ev);
+
+  ride.setTiming();
 
   MotionData motionData = sensor.readMotionData();
   if (!motionData.valid) {
