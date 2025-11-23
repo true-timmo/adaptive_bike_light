@@ -19,8 +19,8 @@
 
 struct SERVO {
   static constexpr int PIN                  = 20;
-  static constexpr int PWM_MIN              = 850;
-  static constexpr int PWM_MAX              = 2000;
+  static constexpr int PWM_MIN              = 780;
+  static constexpr int PWM_MAX              = 1850;
   static constexpr float MAX_SPEED_DPS      = 240.0f;
   static constexpr float MAX_DEG            = 180.0f;
   static constexpr float NEUTRAL_DEG        = 90.0f;
@@ -65,8 +65,11 @@ class RideController {
         bool servoEnabled         = false;
         bool loggingEnabled       = false;
         bool curveBoostEnabled    = false;
-        float currentServoAngle   = SERVO::NEUTRAL_DEG;
 
+
+        uint32_t strictServoTimeout = 0;
+        float strictServoAngle    = SERVO::NEUTRAL_DEG;
+        float currentServoAngle   = SERVO::NEUTRAL_DEG;
         float lastServoWrittenAngle = SERVO::NEUTRAL_DEG;
         uint32_t lastServoWriteMs   = 0;
 
@@ -77,7 +80,8 @@ class RideController {
 
         bool writeServoAngle(float target, float multiplier = 1.0f) {
             const float step = (SERVO::MAX_SPEED_DPS * multiplier) / 1000 * SYSTEM_CLK_MS;
-            const float delta  = clampf(target - currentServoAngle, -step, +step);
+
+            const float delta  = clampf((strictServoTimeout > currentTimestamp ? strictServoAngle : target) - currentServoAngle, -step, +step);
             const float next   = clampf(currentServoAngle + delta, minAngle(), maxAngle());
             currentServoAngle = next;
 
@@ -94,6 +98,11 @@ class RideController {
 
             return false;
         };
+
+        void setStrictServoAngle(float servoAngle) {
+            strictServoAngle = clampf(servoAngle, minAngle(), maxAngle());
+            strictServoTimeout = currentTimestamp + SERVO_CLK_MS + (fabsf(servoAngle - lastServoWrittenAngle) * 1000.0f / SERVO::MAX_SPEED_DPS);
+        }
 
         void logEverything(float gyroYaw, float gyroRoll, float accRollDeg, float accRollFiltered, float yawFrac, RideState rideState, float multiplier, float servoPos, bool servoInSync) {
             static uint32_t lastLogMs = currentTimestamp;
@@ -193,20 +202,17 @@ class RideController {
 
         void turnNeutral() {
             logger->println(F("Turn neutral"));
-            currentServoAngle = neutralAngle();
-            servo->write(currentServoAngle);
+            setStrictServoAngle(neutralAngle());
         }
 
         void turnRight() {
             logger->println(F("Turn right"));
-            currentServoAngle = minAngle();
-            servo->write(currentServoAngle);
+            setStrictServoAngle(minAngle());
         }
 
         void turnLeft() {
             logger->println(F("Turn left"));
-            currentServoAngle = maxAngle();
-            servo->write(currentServoAngle);
+            setStrictServoAngle(maxAngle());
         }
 
         void handleCurve(MotionData motionData) {
