@@ -19,6 +19,7 @@ ConfigurationStorage eeprom = ConfigurationStorage(&logger);
 Button button = Button(BUTTON_PIN, LOW);
 RideController ride = RideController(&sensor, &g_servo, &logger);
 ConfigBlob config;
+bool sleepPending = false;
 
 enum class CMD {
   LEFT,
@@ -90,13 +91,6 @@ void splitCommand(String input, CMD &cmd, String &value) {
     }
 }
 
-static void shutdownPeripherals() {
-  ride.turnNeutral();
-  delay(100);
-  ride.setServoState(false);
-  sensor.sleep(true);
-}
-
 static void printWakeCause() {
   esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
   logger.printf("Wake cause: %d\n", (int)cause);
@@ -108,15 +102,8 @@ void handleSleepOnShortPress(ButtonEvent ev) {
   while (digitalRead(BUTTON_PIN) == LOW) delay(5);
   delay(30);
 
-  shutdownPeripherals();
-
-  const esp_deepsleep_gpio_wake_up_mode_t wakeLevel =
-      button.getActiveLevel() ? ESP_GPIO_WAKEUP_GPIO_HIGH : ESP_GPIO_WAKEUP_GPIO_LOW;
-
-  esp_deep_sleep_enable_gpio_wakeup(BIT(BUTTON_PIN), wakeLevel);
-
-  delay(20);
-  esp_deep_sleep_start();
+  ride.turnNeutral();
+  sleepPending = true;
 }
 
 void handleLoggingOnLongPress(ButtonEvent ev) {
@@ -196,6 +183,21 @@ bool handleSerialCMD(String input) {
   return true;
 }
 
+void goSleep() {
+  delay(50);
+  ride.setServoState(false);
+  sensor.sleep(true);
+  sleepPending = false;
+
+  const esp_deepsleep_gpio_wake_up_mode_t wakeLevel =
+      button.getActiveLevel() ? ESP_GPIO_WAKEUP_GPIO_HIGH : ESP_GPIO_WAKEUP_GPIO_LOW;
+
+  esp_deep_sleep_enable_gpio_wakeup(BIT(BUTTON_PIN), wakeLevel);
+
+  delay(20);
+  esp_deep_sleep_start();
+}
+
 void setup() {
   Serial.begin(115200);
   eeprom.begin(64);
@@ -227,6 +229,14 @@ void loop() {
   handleSleepOnShortPress(ev);
 
   ride.setTiming();
+  if (ride.handleStrictServoAngle() == true) {
+    return;
+  }
+
+  if (sleepPending == true) {
+    goSleep();
+    return;
+  }
 
   MotionData motionData = sensor.readMotionData();
   if (!motionData.valid) {

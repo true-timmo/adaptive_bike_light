@@ -66,7 +66,6 @@ class RideController {
         bool loggingEnabled       = false;
         bool curveBoostEnabled    = false;
 
-
         uint32_t strictServoTimeout = 0;
         float strictServoAngle    = SERVO::NEUTRAL_DEG;
         float currentServoAngle   = SERVO::NEUTRAL_DEG;
@@ -80,8 +79,7 @@ class RideController {
 
         bool writeServoAngle(float target, float multiplier = 1.0f) {
             const float step = (SERVO::MAX_SPEED_DPS * multiplier) / 1000 * SYSTEM_CLK_MS;
-
-            const float delta  = clampf((strictServoTimeout > currentTimestamp ? strictServoAngle : target) - currentServoAngle, -step, +step);
+            const float delta  = clampf(target - currentServoAngle, -step, +step);
             const float next   = clampf(currentServoAngle + delta, minAngle(), maxAngle());
             currentServoAngle = next;
 
@@ -101,7 +99,7 @@ class RideController {
 
         void setStrictServoAngle(float servoAngle) {
             strictServoAngle = clampf(servoAngle, minAngle(), maxAngle());
-            strictServoTimeout = currentTimestamp + SERVO_CLK_MS + (fabsf(servoAngle - lastServoWrittenAngle) * 1000.0f / SERVO::MAX_SPEED_DPS);
+            strictServoTimeout = currentTimestamp + SERVO_CLK_MS + (fabsf(servoAngle - currentServoAngle) * 1000.0f / SERVO::MAX_SPEED_DPS);
         }
 
         void logEverything(float gyroYaw, float gyroRoll, float accRollDeg, float accRollFiltered, float yawFrac, RideState rideState, float multiplier, float servoPos, bool servoInSync) {
@@ -213,6 +211,15 @@ class RideController {
         void turnLeft() {
             logger->println(F("Turn left"));
             setStrictServoAngle(maxAngle());
+        }
+
+        bool handleStrictServoAngle() {
+            if ((int32_t)(strictServoTimeout - currentTimestamp) > 0) {
+                writeServoAngle(strictServoAngle);
+                return true;    
+            } 
+           
+            return false;
         }
 
         void handleCurve(MotionData motionData) {
