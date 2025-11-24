@@ -47,6 +47,8 @@ class MotionSensor {
 
     float xBias = 0.0f;
     float zBias = 0.0f;
+    bool sensorInitialized = false;
+
     Adafruit_MPU6050 g_sensor;
 
     inline float applyDeadzone(float v, float deadzone) {
@@ -56,16 +58,22 @@ class MotionSensor {
   public:
     MotionSensor(int32_t id = -1) : g_sensor() {}
 
-    void init(int sdaPin, int sclPin) {
-        Wire.setPins(sdaPin, sclPin);
-        Wire.setClock(400000);
-        if (!g_sensor.begin()) {
-            Serial.println("MPU6050 not found!");
-            while (true) delay(1000);
+    bool init(int sdaPin, int sclPin) {
+        try {
+            sensorInitialized &= Wire.setPins(sdaPin, sclPin);
+            sensorInitialized &= Wire.setClock(400000);
+            sensorInitialized &= g_sensor.begin();
+
+            g_sensor.setAccelerometerRange(MPU6050_RANGE_4_G);
+            g_sensor.setGyroRange(MPU6050_RANGE_500_DEG);
+            g_sensor.setFilterBandwidth(MPU6050_BAND_21_HZ);
         }
-        g_sensor.setAccelerometerRange(MPU6050_RANGE_4_G);
-        g_sensor.setGyroRange(MPU6050_RANGE_500_DEG);
-        g_sensor.setFilterBandwidth(MPU6050_BAND_21_HZ);
+        catch(const std::exception& e) {
+            return false;
+        }
+
+
+        return sensorInitialized;
     }
 
     bool sleep(bool state) {
@@ -136,6 +144,8 @@ class MotionSensor {
     };
 
     MotionData readMotionData() {
+        if (!sensorInitialized) return MotionData();
+
         sensors_event_t a, g, t;
         g_sensor.getEvent(&a, &g, &t);
 

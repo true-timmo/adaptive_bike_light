@@ -165,15 +165,17 @@ void setup() {
   analogSetAttenuation(ADC_11db); // bis ca. 3.3V
 
   logger.begin(BT_NAME);
-  sensor.init(I2C_SDA, I2C_SCL);
+  if (sensor.init(I2C_SDA, I2C_SCL)) {
+    config = eeprom.load();
+    ride.setLoggingState(config.logging);
+    ride.setServoState(config.servo);
+    ride.setGearOffset(config.gearOffset);
+    ride.runCalibration();
 
-  config = eeprom.load();
-  ride.setLoggingState(config.logging);
-  ride.setServoState(config.servo);
-  ride.setGearOffset(config.gearOffset);
-  ride.runCalibration();
-
-  logger.println("Dynamic Beam Assist ready!");
+    logger.println("Dynamic Beam Assist ready!");
+  } else {
+    logger.println("Motion Sensor failure!");
+  }
 }
 
 void loop() {
@@ -186,7 +188,7 @@ void loop() {
   handleLoggingOnLongPress(ev);
   handleSleepOnShortPress(ev);
 
-  ride.setTiming();
+  ride.syncTiming();
   if (ride.handleStrictServoAngle() == true) {
     return;
   }

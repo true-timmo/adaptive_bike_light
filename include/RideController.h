@@ -98,21 +98,24 @@ class RideController {
             return false;
         };
 
-        void setStrictServoAngle(float servoAngle) {
+        bool setStrictServoAngle(float servoAngle) {
+            if (strictServoAngle == servoAngle) return false;
+
             strictServoAngle = clampf(servoAngle, minAngle(), maxAngle());
             strictServoTimeout = currentTimestamp + SERVO_CLK_MS + (fabsf(servoAngle - currentServoAngle) * 1000.0f / SERVO::MAX_SPEED_DPS);
+            return true;
         }
 
         void logEverything(
-                bool servoInSync, float servoPos, float targetDeg, float multiplier = 1.0f, 
+                float targetDeg, float multiplier = 1.0f, 
                 float gyroYaw = 0.0f, float gyroRoll = 0.0f, float accRollDeg = 0.0f, float accRollFiltered = 0.0f
         ) {
             static uint32_t lastLogMs = currentTimestamp;
 
-            if (loggingEnabled && (servoInSync || lastLogMs - currentTimestamp > LOGGER_CLK_MS)) {
+            if (loggingEnabled && (currentServoAngle == lastServoWrittenAngle || lastLogMs - currentTimestamp > LOGGER_CLK_MS)) {
                 lastLogMs = currentTimestamp;
-                logger->printf("|%d|%.1f|%.1f|%+.2f|%+.2f|%+.2f|%+.1f|%+.1f\n",
-                    servoInSync, servoPos, targetDeg, multiplier,
+                logger->printf("|%.1f|%.1f|%.1f|%+.2f|%+.2f|%+.2f|%+.1f|%+.1f\n",
+                    targetDeg, currentServoAngle, lastServoWrittenAngle, multiplier,
                     gyroYaw, gyroRoll, accRollDeg, accRollFiltered);
             }
         };
@@ -177,16 +180,13 @@ class RideController {
             servoEnabled = _servoState;
         }
 
-        void setTiming() {
+        void syncTiming() {
             currentTimestamp = millis();
-            lastTimestamp = currentTimestamp;
-        }
-
-        void delayNext() {
-            uint32_t elapsed = millis() - currentTimestamp;
+            uint32_t elapsed = fabs(currentTimestamp - lastTimestamp);
             if (elapsed < SYSTEM_CLK_MS) {
                 delay((uint32_t)(SYSTEM_CLK_MS - elapsed));
             }
+            lastTimestamp = currentTimestamp;
         }
 
         void runCalibration() {
@@ -204,24 +204,27 @@ class RideController {
         };
 
         void turnNeutral() {
-            logger->println(F("Turn neutral"));
-            setStrictServoAngle(neutralAngle());
+            if (setStrictServoAngle(neutralAngle())) {
+                logger->println(F("Turn neutral"));
+            }
         }
 
         void turnRight() {
-            logger->println(F("Turn right"));
-            setStrictServoAngle(minAngle());
+            if (setStrictServoAngle(minAngle())) {
+                logger->println(F("Turn right"));
+            }
         }
 
         void turnLeft() {
-            logger->println(F("Turn left"));
-            setStrictServoAngle(maxAngle());
+            if (setStrictServoAngle(maxAngle())) {
+                logger->println(F("Turn left"));
+            }
         }
 
         bool handleStrictServoAngle() {
             if ((int32_t)(strictServoTimeout - currentTimestamp) > 0) {
                 bool servoWritten = writeServoAngle(strictServoAngle);
-                logEverything(servoWritten, lastServoWrittenAngle, strictServoAngle);
+                logEverything(strictServoAngle);
 
                 return true;
             } 
@@ -305,10 +308,8 @@ class RideController {
             bool servoWritten = writeServoAngle(targetDeg, multiplier);
 
             logEverything(
-                servoWritten, lastServoWrittenAngle, targetDeg, multiplier,
+                targetDeg, multiplier,
                 filteredData.gyroYaw, filteredData.gyroRoll, filteredData.accelRollDeg, rollDegFiltered
             );
-
-            delayNext();
         }
 };
