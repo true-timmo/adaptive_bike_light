@@ -4,6 +4,7 @@
 #include "MotionSensor.h"
 #include "ConfigurationStorage.h"
 #include "BTSerial.h"
+#include "BTTerminal.h"
 #include "Button.h"
 
 #define I2C_SDA 9
@@ -15,26 +16,12 @@
 Servo g_servo;
 MotionSensor sensor = MotionSensor(12345);
 BTSerial logger = BTSerial();
+BTTerminal terminal = BTTerminal();
 ConfigurationStorage eeprom = ConfigurationStorage(&logger);
 Button button = Button(BUTTON_PIN, LOW);
 RideController ride = RideController(&sensor, &g_servo, &logger);
 ConfigBlob config;
 bool sleepPending = false;
-
-enum class CMD {
-  LEFT,
-  RIGHT,
-  NEUTRAL,
-  DUMP_CFG,
-  CALIBRATE,
-  HELP,
-  TOGGLE_SERVO,
-  TOGGLE_LOGS,
-  TOGGLE_BOOST,
-  SET_OFFSET,
-  SET_RATIO,
-  BATTERY
-};
 
 float lookupBatteryVoltage() {
   int raw = analogRead(BATTERY_PIN);
@@ -60,35 +47,6 @@ String lookupBatteryStatus() {
   if (v_batt >= 3.55) return "5%";
 
   return "0%";
-}
-
-static CMD resolveCMD(String cmd) {
-  if (cmd == F("r")) return CMD::RIGHT;
-  if (cmd == F("l")) return CMD::LEFT;
-  if (cmd == F("n")) return CMD::NEUTRAL;
-  if (cmd == F("c")) return CMD::CALIBRATE;
-  if (cmd == F("s")) return CMD::TOGGLE_SERVO;
-  if (cmd == F("b")) return CMD::TOGGLE_BOOST;
-  if (cmd == F("log")) return CMD::TOGGLE_LOGS;
-  if (cmd == F("cfg")) return CMD::DUMP_CFG;
-  if (cmd == F("so")) return CMD::SET_OFFSET;
-  if (cmd == F("sr")) return CMD::SET_RATIO;
-  if (cmd == F("v")) return CMD::BATTERY;
-
-  return CMD::HELP;
-}
-
-void splitCommand(String input, CMD &cmd, String &value) {
-    int spacePos = input.indexOf(' ');
-
-    if (spacePos == -1) {
-        cmd = resolveCMD(input);
-        value = "";
-    } else {
-        cmd   = resolveCMD(input.substring(0, spacePos));
-        value = input.substring(spacePos + 1);
-        value.trim();
-    }
 }
 
 static void printWakeCause() {
@@ -125,7 +83,7 @@ bool handleSerialCMD(String input) {
   if (input.isEmpty()) return false;
 
   CMD cmd; String value;
-  splitCommand(input, cmd, value);
+  terminal.splitCommand(input, cmd, value);
 
   switch (cmd) {
     case CMD::LEFT:

@@ -49,6 +49,7 @@ class RideController {
         static constexpr float SYSTEM_CLK_MS = 5.0f;
         static constexpr float SYSTEM_DT_S = 0.001f * SYSTEM_CLK_MS;
         static constexpr float SERVO_CLK_MS = 20.0f;
+        static constexpr float LOGGER_CLK_MS = 20.0f;
         static constexpr float LPF_TAU_S = 0.12f;
         static constexpr float CURVE_BOOST_FACTOR = 0.5f;
 
@@ -102,13 +103,17 @@ class RideController {
             strictServoTimeout = currentTimestamp + SERVO_CLK_MS + (fabsf(servoAngle - currentServoAngle) * 1000.0f / SERVO::MAX_SPEED_DPS);
         }
 
-        void logEverything(float gyroYaw, float gyroRoll, float accRollDeg, float accRollFiltered, float yawFrac, RideState rideState, float multiplier, float servoPos, bool servoInSync) {
+        void logEverything(
+                bool servoInSync, float servoPos, float targetDeg, float multiplier = 1.0f, 
+                float gyroYaw = 0.0f, float gyroRoll = 0.0f, float accRollDeg = 0.0f, float accRollFiltered = 0.0f
+        ) {
             static uint32_t lastLogMs = currentTimestamp;
 
-            if (loggingEnabled && currentTimestamp - lastLogMs >= 20) {
+            if (loggingEnabled && (servoInSync || lastLogMs - currentTimestamp > LOGGER_CLK_MS)) {
                 lastLogMs = currentTimestamp;
-                logger->printf("|%+.2f|%+.2f|%+.2f|%+.2f|%+.1f|%+.1f|%d\n",
-                gyroYaw, gyroRoll, accRollDeg, accRollFiltered, multiplier, servoPos, servoInSync);
+                logger->printf("|%d|%.1f|%.1f|%+.2f|%+.2f|%+.2f|%+.1f|%+.1f\n",
+                    servoInSync, servoPos, targetDeg, multiplier,
+                    gyroYaw, gyroRoll, accRollDeg, accRollFiltered);
             }
         };
 
@@ -215,8 +220,10 @@ class RideController {
 
         bool handleStrictServoAngle() {
             if ((int32_t)(strictServoTimeout - currentTimestamp) > 0) {
-                writeServoAngle(strictServoAngle);
-                return true;    
+                bool servoWritten = writeServoAngle(strictServoAngle);
+                logEverything(servoWritten, lastServoWrittenAngle, strictServoAngle);
+
+                return true;
             } 
            
             return false;
@@ -298,8 +305,8 @@ class RideController {
             bool servoWritten = writeServoAngle(targetDeg, multiplier);
 
             logEverything(
-                filteredData.gyroYaw, filteredData.gyroRoll, filteredData.accelRollDeg,
-                rollDegFiltered, yawFrac, state, multiplier, targetDeg, servoWritten
+                servoWritten, lastServoWrittenAngle, targetDeg, multiplier,
+                filteredData.gyroYaw, filteredData.gyroRoll, filteredData.accelRollDeg, rollDegFiltered
             );
 
             delayNext();
