@@ -6,11 +6,14 @@
 #include "BTSerial.h"
 #include "BTTerminal.h"
 #include "Button.h"
+#include "PowerManager.h"
 
 #define I2C_SDA 9
 #define I2C_SCL 10
 #define BUTTON_PIN D3
-#define BATTERY_PIN D0
+#define VUSB_PIN D0
+#define VBAT_PIN D1
+#define PWR_PIN D8
 #define BT_NAME "Dynamic BeamAssist"
 
 Servo g_servo;
@@ -19,35 +22,10 @@ BTSerial logger = BTSerial();
 BTTerminal terminal = BTTerminal();
 ConfigurationStorage eeprom = ConfigurationStorage(&logger);
 Button button = Button(BUTTON_PIN, LOW);
+PowerManager power = PowerManager(VBAT_PIN, VUSB_PIN, PWR_PIN);
 RideController ride = RideController(&sensor, &g_servo, &logger);
 ConfigBlob config;
 bool sleepPending = false;
-
-float lookupBatteryVoltage() {
-  int raw = analogRead(BATTERY_PIN);
-  float v_adc = raw * (3.3 / 4095.0);
-  const float TEILER = 1.805;
-
-  return v_adc * TEILER;
-}
-
-String lookupBatteryStatus() {
-  float v_batt = lookupBatteryVoltage();
-
-  if (v_batt >= 4.15) return "100%";
-  if (v_batt >= 4.10) return "90%";
-  if (v_batt >= 4.05) return "80%";
-  if (v_batt >= 4.00) return "70%";
-  if (v_batt >= 3.95) return "60%";
-  if (v_batt >= 3.90) return "50%";
-  if (v_batt >= 3.85) return "40%";
-  if (v_batt >= 3.80) return "30%";
-  if (v_batt >= 3.75) return "20%";
-  if (v_batt >= 3.70) return "10%";
-  if (v_batt >= 3.55) return "5%";
-
-  return "0%";
-}
 
 static void printWakeCause() {
   esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
@@ -99,12 +77,12 @@ bool handleSerialCMD(String input) {
       ride.runCalibration();
       break;
     case CMD::BATTERY:
-      logger.printf("Battery status: %s, Voltage: %.2fV\n", lookupBatteryStatus(), lookupBatteryVoltage());
+      logger.printf("Battery: %d%% (%.2fV), VUSB: %.2fV\n", power.readBatteryPercent(), power.readVBattery(), power.readVUSB());
       break;
     case CMD::TOGGLE_SERVO:
       config.servo = !config.servo;
       eeprom.save(config);
-      ride.setServoState(config.servo);
+      power.enablePower(config.servo);
       break;
     case CMD::TOGGLE_LOGS:
       config.logging= !config.logging;
@@ -142,17 +120,16 @@ bool handleSerialCMD(String input) {
 }
 
 void goSleep() {
-  delay(50);
-  ride.setServoState(false);
+  ride.setServoActive(false);
+  power.enablePower(false);
   sensor.sleep(true);
+  delay(20);
   sleepPending = false;
 
   const esp_deepsleep_gpio_wake_up_mode_t wakeLevel =
       button.getActiveLevel() ? ESP_GPIO_WAKEUP_GPIO_HIGH : ESP_GPIO_WAKEUP_GPIO_LOW;
 
   esp_deep_sleep_enable_gpio_wakeup(BIT(BUTTON_PIN), wakeLevel);
-
-  delay(20);
   esp_deep_sleep_start();
 }
 
@@ -160,15 +137,12 @@ void setup() {
   Serial.begin(115200);
   eeprom.begin(64);
   delay(100);
-  
-  analogReadResolution(12);  // 0–4095
-  analogSetAttenuation(ADC_11db); // bis ca. 3.3V
 
   logger.begin(BT_NAME);
   if (sensor.init(I2C_SDA, I2C_SCL)) {
     config = eeprom.load();
+    power.enablePower(config.servo);
     ride.setLoggingState(config.logging);
-    ride.setServoState(config.servo);
     ride.setGearOffset(config.gearOffset);
     ride.runCalibration();
 
@@ -188,7 +162,7 @@ void loop() {
   handleLoggingOnLongPress(ev);
   handleSleepOnShortPress(ev);
 
-  ride.syncTiming();
+  ride.init(power.isPowerEnabled());
   if (ride.handleStrictServoAngle() == true) {
     return;
   }

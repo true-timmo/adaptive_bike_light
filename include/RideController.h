@@ -18,9 +18,9 @@
 #endif
 
 struct SERVO {
-  static constexpr int PIN                  = 20;
-  static constexpr int PWM_MIN              = 780;
-  static constexpr int PWM_MAX              = 1850;
+  static constexpr uint8_t PIN              = D7;
+  static constexpr int PWM_MIN              = 650;
+  static constexpr int PWM_MAX              = 1800;
   static constexpr float MAX_SPEED_DPS      = 240.0f;
   static constexpr float MAX_DEG            = 180.0f;
   static constexpr float NEUTRAL_DEG        = 90.0f;
@@ -63,9 +63,9 @@ class RideController {
         int8_t gearOffset         = 0;
         float gearRatio           = 5.5f;
         float rollDegFiltered     = 0.0f;
-        bool servoEnabled         = false;
         bool loggingEnabled       = false;
         bool curveBoostEnabled    = false;
+        bool servoActive          = false;
 
         uint32_t strictServoTimeout = 0;
         float strictServoAngle    = SERVO::NEUTRAL_DEG;
@@ -84,7 +84,7 @@ class RideController {
             const float next   = clampf(currentServoAngle + delta, minAngle(), maxAngle());
             currentServoAngle = next;
 
-            if (servoEnabled && currentTimestamp - lastServoWriteMs >= SERVO_CLK_MS) {
+            if (servoActive && currentTimestamp - lastServoWriteMs >= SERVO_CLK_MS) {
                 lastServoWriteMs = currentTimestamp;
 
                 if (fabsf(currentServoAngle - lastServoWrittenAngle) > SERVO::WRITE_DEADBAND_DEG) {
@@ -163,30 +163,36 @@ class RideController {
                 loggingEnabled = _state;
             }
         }
+        
+        void setServoActive(bool _powerEnabled) {
+            if (servoActive != _powerEnabled) {
+                logger->printf("Servo power %s.\n", _powerEnabled ? "ON" : "OFF");
 
-        void setServoState(bool _servoState) {
-            if (_servoState == true) {
-                servo->setPeriodHertz(50);
-                servo->attach(SERVO::PIN, SERVO::PWM_MIN, SERVO::PWM_MAX);                    
-                logger->printf("Servo attached. PIN:%d\n", SERVO::PIN);
-                delay(100);
-            } else {
-                delay(100);
-                servo->release();
-                servo->detach();
-                logger->println(F("Servo detached."));
+                if (_powerEnabled == true) {
+                    delay(SERVO_CLK_MS);
+                    servo->attach(SERVO::PIN, SERVO::PWM_MIN, SERVO::PWM_MAX);
+                    logger->printf("Servo attached. PIN:%d\n", SERVO::PIN);
+                } else {
+                    delay(SERVO_CLK_MS);
+                    servo->release();
+                    servo->detach();
+                    pinMode(SERVO::PIN, INPUT_PULLDOWN);
+                    logger->println(F("Servo detached."));
+                }
+
+                servoActive = _powerEnabled;
             }
-
-            servoEnabled = _servoState;
         }
 
-        void syncTiming() {
+        void init(bool powerEnabled) {
             currentTimestamp = millis();
             uint32_t elapsed = fabs(currentTimestamp - lastTimestamp);
             if (elapsed < SYSTEM_CLK_MS) {
                 delay((uint32_t)(SYSTEM_CLK_MS - elapsed));
             }
             lastTimestamp = currentTimestamp;
+
+            setServoActive(powerEnabled);
         }
 
         void runCalibration() {
@@ -199,8 +205,6 @@ class RideController {
             logger->println(F("Calibration done."));
             logger->printf("X-Offset = %.2f°, Y-Offset = %.2f°, Z-Offset = %.2f°\n", a.x, a.y, a.z);
             logger->printf("Gyro-X-Bias: %.3f °/s, Gyro-Z-Bias: %.3f °/s\n", g.gyroRoll, g.gyroYaw);
-
-            turnNeutral();
         };
 
         void turnNeutral() {

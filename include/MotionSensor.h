@@ -60,16 +60,16 @@ class MotionSensor {
 
     bool init(int sdaPin, int sclPin) {
         try {
-            sensorInitialized &= Wire.setPins(sdaPin, sclPin);
-            sensorInitialized &= Wire.setClock(400000);
-            sensorInitialized &= g_sensor.begin();
+            Wire.setPins(sdaPin, sclPin);
+            Wire.setClock(400000);
+            sensorInitialized = g_sensor.begin();
 
             g_sensor.setAccelerometerRange(MPU6050_RANGE_4_G);
             g_sensor.setGyroRange(MPU6050_RANGE_500_DEG);
             g_sensor.setFilterBandwidth(MPU6050_BAND_21_HZ);
         }
         catch(const std::exception& e) {
-            return false;
+            sensorInitialized = false;
         }
 
 
