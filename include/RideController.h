@@ -171,6 +171,7 @@ class RideController {
                 if (_powerEnabled == true) {
                     delay(SERVO_CLK_MS);
                     servo->attach(SERVO::PIN, SERVO::PWM_MIN, SERVO::PWM_MAX);
+                    lastServoWrittenAngle = servo->read();
                     logger->printf("Servo attached. PIN:%d\n", SERVO::PIN);
                 } else {
                     delay(SERVO_CLK_MS);
