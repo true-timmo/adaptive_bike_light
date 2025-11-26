@@ -6,6 +6,9 @@
 class PowerManager {
     private:
         static constexpr float VOLTAGE_DIVIDER = 1.805;
+        static constexpr uint8_t BAT_OFF_PERCENT = 5;
+        static constexpr uint8_t BAT_ON_PERCENT = 10;
+        
         static inline constexpr float VOLTS[]  = {4.20, 4.10, 4.00, 3.90, 3.80, 3.75, 3.70, 3.65, 3.60, 3.50, 3.40};
         static inline constexpr float PERCENT[] = {100,  90,   80,   70,   60,   50,   40,   30,   20,   10,    0 };
 
@@ -62,7 +65,9 @@ class PowerManager {
                 pwrStatus = LOW;
             } else {
                 bool usbPlugged = resolveBatteryStatus(readVUSB()) > 0;
-                bool battEmpty = resolveBatteryStatus(readVBattery()) < 5;
+                uint8_t batteryLimit = (pwrStatus == LOW) ? BAT_ON_PERCENT : BAT_OFF_PERCENT;
+                bool battEmpty = resolveBatteryStatus(readVBattery()) < batteryLimit;
+                
                 pwrStatus = (!usbPlugged && !battEmpty) ? HIGH : LOW;
             }
             digitalWrite(pwrPin, pwrStatus);
