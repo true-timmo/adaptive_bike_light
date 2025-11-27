@@ -4,9 +4,10 @@
 
 struct ConfigBlob {
     uint32_t deviceID = 0xC0FFEE42;
-    uint8_t  version = 1;
+    uint8_t  version = 2;
     float    yawBias = 0.0f;
     bool     logging = false;
+    bool     bluetooth = true;
     bool     servo = false;
     int8_t   gearOffset = 0;
     float    gearRatio = 5.5f;
@@ -19,7 +20,7 @@ class ConfigurationStorage {
     private:
         static constexpr int EEPROM_ADDR = 0;
         static constexpr uint32_t DEVICE_ID = 0xC0FFEE42;
-        static constexpr uint8_t BLOB_VERSION = 1;
+        static constexpr uint8_t BLOB_VERSION = 2;
 
         Stream *logger;
         bool initialized = false;
@@ -37,6 +38,7 @@ class ConfigurationStorage {
             c = crc16_acc((const uint8_t*)&b.version, sizeof b.version) + c;
             c = crc16_acc((const uint8_t*)&b.yawBias, sizeof b.yawBias) + c;
             c = crc16_acc((const uint8_t*)&b.logging, sizeof b.logging) + c;
+            c = crc16_acc((const uint8_t*)&b.bluetooth, sizeof b.bluetooth) + c;
             c = crc16_acc((const uint8_t*)&b.servo, sizeof b.servo) + c;
             c = crc16_acc((const uint8_t*)&b.gearOffset, sizeof b.gearOffset) + c;
             c = crc16_acc((const uint8_t*)&b.gearRatio, sizeof b.gearRatio) + c;

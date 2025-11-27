@@ -42,17 +42,20 @@ void handleSleepOnShortPress(ButtonEvent ev) {
   sleepPending = true;
 }
 
-void handleLoggingOnLongPress(ButtonEvent ev) {
+void switchBluetoothOnLongPress(ButtonEvent ev) {
   if (ev != BUTTON_LONG) return;
 
-  config = eeprom.load();
-  config.logging = !config.logging;
-  eeprom.save(config);
-  ride.setLoggingState(config.logging);
+    bool btEnabled = config.bluetooth;
+    if (btEnabled) {
+      logger.stop();
+      config.bluetooth = false;
+    }
+    else {
+      logger.begin(BT_NAME);
+      config.bluetooth = true;
+    }
 
-  String sMode = (config.logging) ? "ON" : "OFF";
-
-  logger.printf("Toggle logging mode: %s\n", sMode);
+    eeprom.save(config);    
 }
 
 bool handleSerialCMD(String input) {
@@ -134,13 +137,18 @@ void goSleep() {
 }
 
 void setup() {
+  setCpuFrequencyMhz(80);
   Serial.begin(115200);
   eeprom.begin(64);
-  delay(100);
+  delay(30);
+  config = eeprom.load();
+  delay(50);
 
-  logger.begin(BT_NAME);
+  if (config.bluetooth) {
+    logger.begin(BT_NAME);
+  }
+
   if (sensor.init(I2C_SDA, I2C_SCL)) {
-    config = eeprom.load();
     power.enablePower(config.servo);
     ride.setLoggingState(config.logging);
     ride.setGearOffset(config.gearOffset);
@@ -159,7 +167,7 @@ void loop() {
   }
 
   ButtonEvent ev = button.checkEvent();
-  handleLoggingOnLongPress(ev);
+  switchBluetoothOnLongPress(ev);
   handleSleepOnShortPress(ev);
 
   ride.init(power.isPowerEnabled());

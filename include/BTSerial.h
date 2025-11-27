@@ -54,6 +54,8 @@ public:
 
     bool stop() {
         if (!_active) return false;
+        NimBLEDevice::deinit(true);
+        _active = false;
 
         return true;
     }
