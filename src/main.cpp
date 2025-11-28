@@ -27,6 +27,13 @@ RideController ride = RideController(&sensor, &g_servo, &logger);
 ConfigBlob config;
 bool sleepPending = false;
 
+static CalibBlob mapMotionDataToCalibBlob(MotionData motionData) {
+  return CalibBlob(
+    motionData.gyroRoll, motionData.gyroYaw,
+    motionData.accel.x, motionData.accel.y, motionData.accel.z
+  );
+}
+
 static void printWakeCause() {
   esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
   logger.printf("Wake cause: %d\n", (int)cause);
@@ -78,9 +85,11 @@ bool handleSerialCMD(String input) {
       break;
     case CMD::CALIBRATE:
       ride.runCalibration();
+      config.calibData = mapMotionDataToCalibBlob(sensor.readCalibration());
+      eeprom.save(config);
       break;
     case CMD::BATTERY:
-      logger.printf("Battery: %d%% (%.2fV), VUSB: %.2fV\n", power.readBatteryPercent(), power.readVBattery(), power.readVUSB());
+      logger.printf("Battery: %d%% (%.2fV) | VUSB: %.2fV\n", power.readBatteryPercent(), power.readVBattery(), power.readVUSB());
       break;
     case CMD::TOGGLE_SERVO:
       config.servo = !config.servo;
@@ -149,10 +158,15 @@ void setup() {
   }
 
   if (sensor.init(I2C_SDA, I2C_SCL)) {
+    CalibBlob calibData = config.calibData;
+    sensor.writeCalibration(MotionData(
+      calibData.rollBias,
+      calibData.yawBias,
+      Accel(calibData.xOffset, calibData.yOffset, calibData.zOffset)
+    ));
     power.enablePower(config.servo);
     ride.setLoggingState(config.logging);
     ride.setGearOffset(config.gearOffset);
-    ride.runCalibration();
 
     logger.println("Dynamic Beam Assist ready!");
   } else {

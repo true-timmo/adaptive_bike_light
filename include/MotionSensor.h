@@ -32,6 +32,9 @@ struct MotionData {
 
 class MotionSensor {
   private:
+    static constexpr uint32_t I2C_CLOCK = 400000;
+    static constexpr uint8_t SAMPLE_RATE_DIVIDER = 0x03;
+
     static constexpr float G_MPS2 = 9.80665f;
     static constexpr float GYRO_DEADZONE_YAW = 0.6f;
     static constexpr float GYRO_DEADZONE_ROLL = 0.31f;
@@ -45,8 +48,8 @@ class MotionSensor {
     float yOffset = 0.0f;
     float zOffset = 0.0f;
 
-    float xBias = 0.0f;
-    float zBias = 0.0f;
+    float xBias = 0.0f; //Yaw
+    float zBias = 0.0f; //Roll
     bool sensorInitialized = false;
 
     Adafruit_MPU6050 g_sensor;
@@ -61,12 +64,13 @@ class MotionSensor {
     bool init(int sdaPin, int sclPin) {
         try {
             Wire.setPins(sdaPin, sclPin);
-            Wire.setClock(400000);
+            Wire.setClock(I2C_CLOCK);
             sensorInitialized = g_sensor.begin();
 
+            g_sensor.setSampleRateDivisor(SAMPLE_RATE_DIVIDER);
             g_sensor.setAccelerometerRange(MPU6050_RANGE_4_G);
             g_sensor.setGyroRange(MPU6050_RANGE_500_DEG);
-            g_sensor.setFilterBandwidth(MPU6050_BAND_21_HZ);
+            g_sensor.setFilterBandwidth(MPU6050_BAND_44_HZ);
         }
         catch(const std::exception& e) {
             sensorInitialized = false;
@@ -78,6 +82,18 @@ class MotionSensor {
 
     bool sleep(bool state) {
         return g_sensor.enableSleep(state);
+    }
+
+    void writeCalibration(MotionData motionData) {
+        xBias = motionData.gyroYaw;
+        zBias = motionData.gyroRoll;
+        xOffset = motionData.accel.x;
+        yOffset = motionData.accel.y;
+        zOffset = motionData.accel.z;
+    }
+
+    MotionData readCalibration() {
+        return MotionData(zBias, xBias, Accel(xOffset, yOffset, zOffset));
     }
 
     MotionData calibrateGyro(uint16_t samples = 200, uint16_t delayMs = 5) {
