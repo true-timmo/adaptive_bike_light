@@ -1,11 +1,6 @@
-#ifndef _CurveDetector_h
-#define _CurveDetector_h
-
+#pragma once
 #include <Arduino.h>
-
-#ifndef _MotionFilter_h
 #include "MotionFilter.h"
-#endif
 
 enum class Direction: int8_t {
     LEFT = -1,
@@ -110,4 +105,3 @@ public:
         return (currentCurveDir != Direction::NEUTRAL);
     }
 };
-#endif //_CurveDetector_h

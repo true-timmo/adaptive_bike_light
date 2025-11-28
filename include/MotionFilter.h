@@ -1,11 +1,6 @@
-#ifndef _MotionFilter_h
-#define _MotionFilter_h
-
+#pragma once
 #include <Arduino.h>
-
-#ifndef MotionSensor_h
 #include "MotionSensor.h"
-#endif
 
 struct FilteredData {
     float gyroRoll = 0.0f;
@@ -98,4 +93,3 @@ class MotionFilter {
             return filteredData;
         };
 };
-#endif // _MotionFilter_h

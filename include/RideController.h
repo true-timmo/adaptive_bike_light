@@ -1,21 +1,9 @@
 #pragma once
 #include <Arduino.h>
-
-#ifndef ESP32_Servo_h
 #include <ESP32Servo.h>
-#endif
-
-#ifndef MotionSensor_h
 #include "MotionSensor.h"
-#endif
-
-#ifndef _MotionFilter_h
 #include "MotionFilter.h"
-#endif
-
-#ifndef CurveDetector_h
 #include "CurveDetector.h"
-#endif
 
 struct SERVO {
   static constexpr uint8_t PIN              = D7;

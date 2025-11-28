@@ -1,6 +1,4 @@
-#ifndef _BTSerial_h_
-#define _BTSerial_h_
-
+#pragma once
 #include <Arduino.h>
 #include <Stream.h>
 #include "esp_gap_ble_api.h"
@@ -59,7 +57,6 @@ public:
 
         return true;
     }
-
 
     // --- Stream / Print kompatibel ---
     size_t write(uint8_t b) override { return write(&b, 1); }
@@ -184,5 +181,3 @@ private:
         }
     };
 };
-
-#endif // _BTSerial_h_

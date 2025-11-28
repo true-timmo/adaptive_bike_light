@@ -34,11 +34,6 @@ static CalibBlob mapMotionDataToCalibBlob(MotionData motionData) {
   );
 }
 
-static void printWakeCause() {
-  esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
-  logger.printf("Wake cause: %d\n", (int)cause);
-}
-
 void handleSleepOnShortPress(ButtonEvent ev) {
   if (ev != BUTTON_SHORT) return;
 

@@ -1,6 +1,4 @@
-#ifndef PowerManager_h_
-#define PowerManager_h_
-
+#pragma once
 #include <Arduino.h>
 
 class PowerManager {
@@ -81,5 +79,3 @@ class PowerManager {
             return isPowerEnabled();
         }
 };
-
-#endif //PowerManager_h_

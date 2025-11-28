@@ -1,6 +1,4 @@
-#ifndef _BTTerminal_h_
-#define _BTTerminal_h_
-
+#pragma once
 #include <Arduino.h>
 
 enum class CMD {
@@ -51,5 +49,3 @@ public:
         }
     }
 };
-
-#endif // _BTTerminal_h_

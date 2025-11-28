@@ -1,6 +1,4 @@
-#ifndef MotionSensor_h
-#define MotionSensor_h
-
+#pragma once
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_MPU6050.h>
@@ -183,4 +181,3 @@ class MotionSensor {
         return MotionData(gRoll, gYaw, Accel(ax, ay, az, accRollDeg));
     }
 };
-#endif // MotionSensor_h
