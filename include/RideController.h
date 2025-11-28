@@ -199,13 +199,14 @@ class RideController {
         void runCalibration() {
             delay(300);
             logger->println(F("Calibrating roll angle..."));
-            const Accel a = sensor->calibrateAccel();
+            sensor->calibrateAccel();
             logger->println(F("Calibrating Gyro-Bias..."));
-            const MotionData g = sensor->calibrateGyro();
+            sensor->calibrateGyro();
 
+            MotionData cd = sensor->readCalibration();
             logger->println(F("Calibration done."));
-            logger->printf("X-Offset = %.2f°, Y-Offset = %.2f°, Z-Offset = %.2f°\n", a.x, a.y, a.z);
-            logger->printf("Gyro-X-Bias: %.3f °/s, Gyro-Z-Bias: %.3f °/s\n", g.gyroRoll, g.gyroYaw);
+            logger->printf("X-Offset = %.2f°, Y-Offset = %.2f°, Z-Offset = %.2f°\n", cd.accel.x, cd.accel.y, cd.accel.z);
+            logger->printf("Roll-Bias: %.3f °/s, Yaw-Bias: %.3f °/s\n", cd.gyroRoll, cd.gyroYaw);
         };
 
         void turnNeutral() {

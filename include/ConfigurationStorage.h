@@ -60,7 +60,7 @@ class ConfigurationStorage {
         void dump(ConfigBlob& blob) {
             logger->printf("EEPROM: v%u | size: %u bytes\n", blob.version, (unsigned)sizeof(blob));
             logger->printf("gearOffset: %d | gearRatio: %.3f\n", blob.gearOffset, blob.gearRatio);
-            logger->printf("yaw: %.2f | roll: %.2f | x: %.2f | y: %.2f | z: %.2f\n", 
+            logger->printf("yaw: %.2f°/s | roll: %.2f°/s | x: %.2f° | y: %.2f° | z: %.2f°\n", 
                 blob.calibData.yawBias, blob.calibData.rollBias, 
                 blob.calibData.xOffset, blob.calibData.yOffset, blob.calibData.zOffset);
             logger->printf("logging: %d | servo: %d | curveBoost: %d\n", (int)blob.logging, (int)blob.servo, (int)blob.curveBoost);
