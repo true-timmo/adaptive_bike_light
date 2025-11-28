@@ -95,11 +95,13 @@ bool handleSerialCMD(String input) {
       config.servo = !config.servo;
       eeprom.save(config);
       power.enablePower(config.servo);
+      logger.printf("Toggle servo: %s\n", (config.servo) ? F("ON") : F("OFF"));
       break;
     case CMD::TOGGLE_LOGS:
       config.logging= !config.logging;
       eeprom.save(config);
       ride.setLoggingState(config.logging);
+      logger.printf("Toggle logging: %s\n", (config.logging) ? F("ON") : F("OFF"));
       break;
     case CMD::TOGGLE_BOOST:
       config.curveBoost= !config.curveBoost;
