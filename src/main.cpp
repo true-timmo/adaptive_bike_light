@@ -14,7 +14,7 @@
 #define VUSB_PIN D0
 #define VBAT_PIN D1
 #define PWR_PIN D8
-#define BT_NAME "Dynamic BeamAssist"
+#define BT_NAME "Dynamic BeamAssist #2"
 
 Servo g_servo;
 MotionSensor sensor = MotionSensor(12345);

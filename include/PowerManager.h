@@ -4,10 +4,10 @@
 class PowerManager {
     private:
         static constexpr float VOLTAGE_DIVIDER = 1.805;
-        static constexpr uint8_t PWR_OFF_PERCENT = 10;
-        static constexpr uint8_t PWR_ON_PERCENT = 20;
+        static constexpr uint8_t PWR_OFF_PERCENT = 5;
+        static constexpr uint8_t PWR_ON_PERCENT = 30;
         
-        static inline constexpr float VOLTS[]  = {4.20, 4.10, 4.00, 3.90, 3.80, 3.75, 3.70, 3.65, 3.60, 3.50, 3.40};
+        static inline constexpr float VOLTS[]  = {4.20, 4.10, 4.00, 3.90, 3.80, 3.75, 3.70, 3.65, 3.60, 3.50, 3.30};
         static inline constexpr float PERCENT[] = {100,  90,   80,   70,   60,   50,   40,   30,   20,   10,    0 };
 
         uint8_t battPin;
@@ -43,7 +43,7 @@ class PowerManager {
             : battPin(batt_pin), vusbPin(vusb_pin), pwrPin(pwr_pin) {
                 analogReadResolution(12);  // 0–4095
                 analogSetAttenuation(ADC_11db); // bis ca. 3.3V
-                pinMode(pwrPin, OUTPUT);
+                pinMode(pwrPin, INPUT);
             };
 
         float readVBattery() {
@@ -63,12 +63,19 @@ class PowerManager {
                 pwrStatus = LOW;
             } else {
                 bool usbPlugged = resolveBatteryStatus(readVUSB()) > 0;
-                uint8_t batteryLimit = (pwrStatus == LOW) ? PWR_ON_PERCENT : PWR_OFF_PERCENT;
+                uint8_t batteryLimit = (pwrStatus == HIGH) ? PWR_ON_PERCENT : PWR_OFF_PERCENT;
                 bool battEmpty = resolveBatteryStatus(readVBattery()) < batteryLimit;
                 
                 pwrStatus = (!usbPlugged && !battEmpty) ? HIGH : LOW;
             }
-            digitalWrite(pwrPin, pwrStatus);
+
+            if (pwrStatus == HIGH) {
+                pinMode(pwrPin, OUTPUT);
+                digitalWrite(pwrPin, LOW);
+            } else {
+                pinMode(pwrPin, INPUT);
+            }
+            
 
             return pwrStatus == HIGH;
         }
