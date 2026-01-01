@@ -36,6 +36,10 @@ class Button {
             pinMode(pin, (activeState == LOW) ? INPUT_PULLUP : INPUT_PULLDOWN);
         }
 
+        inline uint8_t getPin() const {
+            return pin;
+        }
+
         inline uint8_t getActiveLevel() const {
             return activeState;
         }

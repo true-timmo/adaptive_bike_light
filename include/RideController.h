@@ -184,6 +184,11 @@ class RideController {
             setServoActive(powerEnabled);
         }
 
+        void hibernate() {
+            setServoActive(false);
+            sensor->sleep(true);
+        }
+
         void runCalibration() {
             delay(300);
             logger->println(F("Calibrating roll angle..."));
@@ -227,6 +232,8 @@ class RideController {
         }
 
         void handleCurve(MotionData motionData) {
+            if (!motionData.valid) return;
+            
             FilteredData filteredData = filter.handle(motionData);
             if (filteredData.isShock) return;
 

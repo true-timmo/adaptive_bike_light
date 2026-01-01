@@ -1,5 +1,4 @@
 #include <ESP32Servo.h>
-#include "esp_sleep.h"
 #include "RideController.h"
 #include "MotionSensor.h"
 #include "ConfigurationStorage.h"
@@ -14,7 +13,7 @@
 #define VUSB_PIN D0
 #define VBAT_PIN D1
 #define PWR_PIN D8
-#define BT_NAME "Dynamic BeamAssist #2"
+#define BT_NAME "Dynamic BeamAssist #1"
 
 Servo g_servo;
 MotionSensor sensor = MotionSensor(12345);
@@ -22,8 +21,8 @@ BTSerial logger = BTSerial();
 BTTerminal terminal = BTTerminal();
 ConfigurationStorage eeprom = ConfigurationStorage(&logger);
 Button button = Button(BUTTON_PIN, LOW);
-PowerManager power = PowerManager(VBAT_PIN, VUSB_PIN, PWR_PIN);
 RideController ride = RideController(&sensor, &g_servo, &logger);
+PowerManager power = PowerManager(VBAT_PIN, VUSB_PIN, PWR_PIN, &button, &ride);
 ConfigBlob config;
 bool sleepPending = false;
 
@@ -40,8 +39,7 @@ void handleSleepOnShortPress(ButtonEvent ev) {
   while (digitalRead(BUTTON_PIN) == LOW) delay(5);
   delay(30);
 
-  ride.turnNeutral();
-  sleepPending = true;
+  power.setSleepPending();
 }
 
 void switchBluetoothOnLongPress(ButtonEvent ev) {
@@ -128,20 +126,6 @@ bool handleSerialCMD(String input) {
   return true;
 }
 
-void goSleep() {
-  ride.setServoActive(false);
-  power.enablePower(false);
-  sensor.sleep(true);
-  delay(20);
-  sleepPending = false;
-
-  const esp_deepsleep_gpio_wake_up_mode_t wakeLevel =
-      button.getActiveLevel() ? ESP_GPIO_WAKEUP_GPIO_HIGH : ESP_GPIO_WAKEUP_GPIO_LOW;
-
-  esp_deep_sleep_enable_gpio_wakeup(BIT(BUTTON_PIN), wakeLevel);
-  esp_deep_sleep_start();
-}
-
 void setup() {
   setCpuFrequencyMhz(80);
   Serial.begin(115200);
@@ -186,16 +170,9 @@ void loop() {
     return;
   }
 
-  if (sleepPending == true) {
-    goSleep();
+  if (power.goSleep()) {
     return;
   }
 
-  MotionData motionData = sensor.readMotionData();
-  if (!motionData.valid) {
-    ride.turnNeutral();
-    return;
-  }
-
-  ride.handleCurve(motionData);
+  ride.handleCurve(sensor.readMotionData());
 }
