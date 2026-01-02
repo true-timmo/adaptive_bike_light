@@ -1,5 +1,4 @@
 #include <ESP32Servo.h>
-#include "esp_sleep.h"
 #include "RideController.h"
 #include "MotionSensor.h"
 #include "ConfigurationStorage.h"
@@ -14,7 +13,7 @@
 #define VUSB_PIN D0
 #define VBAT_PIN D1
 #define PWR_PIN D8
-#define BT_NAME "Dynamic BeamAssist"
+#define BT_NAME "Dynamic BeamAssist #1"
 
 Servo g_servo;
 MotionSensor sensor = MotionSensor(12345);
@@ -22,28 +21,26 @@ BTSerial logger = BTSerial();
 BTTerminal terminal = BTTerminal();
 ConfigurationStorage eeprom = ConfigurationStorage(&logger);
 Button button = Button(BUTTON_PIN, LOW);
-PowerManager power = PowerManager(VBAT_PIN, VUSB_PIN, PWR_PIN);
 RideController ride = RideController(&sensor, &g_servo, &logger);
+PowerManager power = PowerManager(VBAT_PIN, VUSB_PIN, PWR_PIN, &button, &ride);
 ConfigBlob config;
 bool sleepPending = false;
 
-static void printWakeCause() {
-  esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
-  logger.printf("Wake cause: %d\n", (int)cause);
+static CalibBlob mapMotionDataToCalibBlob(MotionData motionData) {
+  return CalibBlob(
+    motionData.gyroRoll, motionData.gyroYaw,
+    motionData.accel.x, motionData.accel.y, motionData.accel.z
+  );
 }
 
-void handleSleepOnShortPress(ButtonEvent ev) {
-  if (ev != BUTTON_SHORT) return;
+void handleSleepOnShortPress() {
+  if (!button.isShortPressed()) return;
 
-  while (digitalRead(BUTTON_PIN) == LOW) delay(5);
-  delay(30);
-
-  ride.turnNeutral();
-  sleepPending = true;
+  power.setSleepPending();
 }
 
-void switchBluetoothOnLongPress(ButtonEvent ev) {
-  if (ev != BUTTON_LONG) return;
+void switchBluetoothOnLongPress() {
+  if (!button.isLongPressed()) return;
 
     bool btEnabled = config.bluetooth;
     if (btEnabled) {
@@ -78,19 +75,23 @@ bool handleSerialCMD(String input) {
       break;
     case CMD::CALIBRATE:
       ride.runCalibration();
+      config.calibData = mapMotionDataToCalibBlob(sensor.readCalibration());
+      eeprom.save(config);
       break;
     case CMD::BATTERY:
-      logger.printf("Battery: %d%% (%.2fV), VUSB: %.2fV\n", power.readBatteryPercent(), power.readVBattery(), power.readVUSB());
+      logger.printf("Battery: %d%% (%.2fV) | VUSB: %.2fV\n", power.readBatteryPercent(), power.readVBattery(), power.readVUSB());
       break;
     case CMD::TOGGLE_SERVO:
       config.servo = !config.servo;
       eeprom.save(config);
       power.enablePower(config.servo);
+      logger.printf("Toggle servo: %s\n", (config.servo) ? F("ON") : F("OFF"));
       break;
     case CMD::TOGGLE_LOGS:
       config.logging= !config.logging;
       eeprom.save(config);
       ride.setLoggingState(config.logging);
+      logger.printf("Toggle logging: %s\n", (config.logging) ? F("ON") : F("OFF"));
       break;
     case CMD::TOGGLE_BOOST:
       config.curveBoost= !config.curveBoost;
@@ -122,20 +123,6 @@ bool handleSerialCMD(String input) {
   return true;
 }
 
-void goSleep() {
-  ride.setServoActive(false);
-  power.enablePower(false);
-  sensor.sleep(true);
-  delay(20);
-  sleepPending = false;
-
-  const esp_deepsleep_gpio_wake_up_mode_t wakeLevel =
-      button.getActiveLevel() ? ESP_GPIO_WAKEUP_GPIO_HIGH : ESP_GPIO_WAKEUP_GPIO_LOW;
-
-  esp_deep_sleep_enable_gpio_wakeup(BIT(BUTTON_PIN), wakeLevel);
-  esp_deep_sleep_start();
-}
-
 void setup() {
   setCpuFrequencyMhz(80);
   Serial.begin(115200);
@@ -149,10 +136,15 @@ void setup() {
   }
 
   if (sensor.init(I2C_SDA, I2C_SCL)) {
+    CalibBlob calibData = config.calibData;
+    sensor.writeCalibration(MotionData(
+      calibData.rollBias,
+      calibData.yawBias,
+      Accel(calibData.xOffset, calibData.yOffset, calibData.zOffset)
+    ));
     power.enablePower(config.servo);
     ride.setLoggingState(config.logging);
     ride.setGearOffset(config.gearOffset);
-    ride.runCalibration();
 
     logger.println("Dynamic Beam Assist ready!");
   } else {
@@ -166,25 +158,19 @@ void loop() {
     if (handleSerialCMD(serialCmd)) return;
   }
 
-  ButtonEvent ev = button.checkEvent();
-  switchBluetoothOnLongPress(ev);
-  handleSleepOnShortPress(ev);
+  button.checkEvent();
+  switchBluetoothOnLongPress();
+  handleSleepOnShortPress();
 
-  ride.init(power.isPowerEnabled());
+  ride.initTimeCycle();
+  ride.setServoActive(power.isPowerEnabled());
   if (ride.handleStrictServoAngle() == true) {
     return;
   }
 
-  if (sleepPending == true) {
-    goSleep();
+  if (power.goSleep()) {
     return;
   }
 
-  MotionData motionData = sensor.readMotionData();
-  if (!motionData.valid) {
-    ride.turnNeutral();
-    return;
-  }
-
-  ride.handleCurve(motionData);
+  ride.handleCurve(sensor.readMotionData());
 }

@@ -1,20 +1,29 @@
-#ifndef PowerManager_h_
-#define PowerManager_h_
-
+#pragma once
 #include <Arduino.h>
+#include "Button.h"
+#include "RideController.h"
+#include "esp_sleep.h"
 
 class PowerManager {
     private:
         static constexpr float VOLTAGE_DIVIDER = 1.805;
-        static constexpr uint8_t BAT_OFF_PERCENT = 5;
-        static constexpr uint8_t BAT_ON_PERCENT = 10;
+        static constexpr uint8_t PWR_OFF_PERCENT = 0;
+        static constexpr uint8_t PWR_ON_PERCENT = 20;
+        static constexpr uint32_t IDLE_DELAY_MS = 1000;
+        static constexpr uint32_t SLEEP_DELAY_MS = 600000;
+
         
-        static inline constexpr float VOLTS[]  = {4.20, 4.10, 4.00, 3.90, 3.80, 3.75, 3.70, 3.65, 3.60, 3.50, 3.40};
+        static inline constexpr float VOLTS[]  = {4.20, 4.10, 4.00, 3.90, 3.80, 3.75, 3.70, 3.65, 3.60, 3.50, 3.30};
         static inline constexpr float PERCENT[] = {100,  90,   80,   70,   60,   50,   40,   30,   20,   10,    0 };
 
         uint8_t battPin;
         uint8_t vusbPin;
         uint8_t pwrPin;
+        uint8_t btnPin;
+
+        Button* button;
+        RideController* ride;
+        bool sleepPending = false;
         bool pwrEnabled = true;
         int pwrStatus = HIGH;
 
@@ -39,13 +48,27 @@ class PowerManager {
 
             return 0;
         }
+
+        bool isUsbPlugged() {
+            return resolveBatteryStatus(readVUSB()) > 0;
+        }
+
+        bool isSleepPending() {
+            if (sleepPending) return true;
+
+            if (!isUsbPlugged() && ride->getLastServoMoveMs() > SLEEP_DELAY_MS) {
+                setSleepPending();
+            }
+
+            return sleepPending;
+        }
     
     public:
-        PowerManager(uint8_t batt_pin, uint8_t vusb_pin, uint8_t pwr_pin)
-            : battPin(batt_pin), vusbPin(vusb_pin), pwrPin(pwr_pin) {
+        PowerManager(uint8_t batt_pin, uint8_t vusb_pin, uint8_t pwr_pin, Button* b, RideController* r)
+            : battPin(batt_pin), vusbPin(vusb_pin), pwrPin(pwr_pin), button(b), ride(r) {
                 analogReadResolution(12);  // 0–4095
                 analogSetAttenuation(ADC_11db); // bis ca. 3.3V
-                pinMode(pwrPin, OUTPUT);
+                pinMode(pwrPin, INPUT);
             };
 
         float readVBattery() {
@@ -64,13 +87,20 @@ class PowerManager {
             if (!pwrEnabled) {
                 pwrStatus = LOW;
             } else {
-                bool usbPlugged = resolveBatteryStatus(readVUSB()) > 0;
-                uint8_t batteryLimit = (pwrStatus == LOW) ? BAT_ON_PERCENT : BAT_OFF_PERCENT;
+                bool isIdle = ride->getLastServoMoveMs() > IDLE_DELAY_MS;
+                uint8_t batteryLimit = (pwrStatus == HIGH) ? PWR_ON_PERCENT : PWR_OFF_PERCENT;
                 bool battEmpty = resolveBatteryStatus(readVBattery()) < batteryLimit;
                 
-                pwrStatus = (!usbPlugged && !battEmpty) ? HIGH : LOW;
+                pwrStatus = (!isIdle && !isUsbPlugged() && !battEmpty) ? HIGH : LOW;
             }
-            digitalWrite(pwrPin, pwrStatus);
+
+            if (pwrStatus == HIGH) {
+                pinMode(pwrPin, OUTPUT);
+                digitalWrite(pwrPin, LOW);
+            } else {
+                pinMode(pwrPin, INPUT);
+            }
+            
 
             return pwrStatus == HIGH;
         }
@@ -80,6 +110,26 @@ class PowerManager {
 
             return isPowerEnabled();
         }
-};
+    
+        void setSleepPending() {
+            sleepPending = true;
+            ride->turnNeutral();
+        }
 
-#endif //PowerManager_h_
+        bool goSleep() {
+            if (!isSleepPending()) return false;
+
+            ride->hibernate();
+            delay(20);
+            enablePower(false);
+            sleepPending = false;
+
+            const esp_deepsleep_gpio_wake_up_mode_t wakeLevel =
+                button->getActiveLevel() ? ESP_GPIO_WAKEUP_GPIO_HIGH : ESP_GPIO_WAKEUP_GPIO_LOW;
+
+            esp_deep_sleep_enable_gpio_wakeup(BIT(button->getPin()), wakeLevel);
+            esp_deep_sleep_start();
+
+            return true;
+        }
+};
