@@ -33,17 +33,14 @@ static CalibBlob mapMotionDataToCalibBlob(MotionData motionData) {
   );
 }
 
-void handleSleepOnShortPress(ButtonEvent ev) {
-  if (ev != BUTTON_SHORT) return;
-
-  while (digitalRead(BUTTON_PIN) == LOW) delay(5);
-  delay(30);
+void handleSleepOnShortPress() {
+  if (!button.isShortPressed()) return;
 
   power.setSleepPending();
 }
 
-void switchBluetoothOnLongPress(ButtonEvent ev) {
-  if (ev != BUTTON_LONG) return;
+void switchBluetoothOnLongPress() {
+  if (!button.isLongPressed()) return;
 
     bool btEnabled = config.bluetooth;
     if (btEnabled) {
@@ -161,11 +158,12 @@ void loop() {
     if (handleSerialCMD(serialCmd)) return;
   }
 
-  ButtonEvent ev = button.checkEvent();
-  switchBluetoothOnLongPress(ev);
-  handleSleepOnShortPress(ev);
+  button.checkEvent();
+  switchBluetoothOnLongPress();
+  handleSleepOnShortPress();
 
-  ride.init(power.isPowerEnabled());
+  ride.initTimeCycle();
+  ride.setServoActive(power.isPowerEnabled());
   if (ride.handleStrictServoAngle() == true) {
     return;
   }

@@ -9,6 +9,9 @@ class PowerManager {
         static constexpr float VOLTAGE_DIVIDER = 1.805;
         static constexpr uint8_t PWR_OFF_PERCENT = 0;
         static constexpr uint8_t PWR_ON_PERCENT = 20;
+        static constexpr uint32_t IDLE_DELAY_MS = 1000;
+        static constexpr uint32_t SLEEP_DELAY_MS = 600000;
+
         
         static inline constexpr float VOLTS[]  = {4.20, 4.10, 4.00, 3.90, 3.80, 3.75, 3.70, 3.65, 3.60, 3.50, 3.30};
         static inline constexpr float PERCENT[] = {100,  90,   80,   70,   60,   50,   40,   30,   20,   10,    0 };
@@ -45,6 +48,20 @@ class PowerManager {
 
             return 0;
         }
+
+        bool isUsbPlugged() {
+            return resolveBatteryStatus(readVUSB()) > 0;
+        }
+
+        bool isSleepPending() {
+            if (sleepPending) return true;
+
+            if (!isUsbPlugged() && ride->getLastServoMoveMs() > SLEEP_DELAY_MS) {
+                setSleepPending();
+            }
+
+            return sleepPending;
+        }
     
     public:
         PowerManager(uint8_t batt_pin, uint8_t vusb_pin, uint8_t pwr_pin, Button* b, RideController* r)
@@ -70,11 +87,11 @@ class PowerManager {
             if (!pwrEnabled) {
                 pwrStatus = LOW;
             } else {
-                bool usbPlugged = resolveBatteryStatus(readVUSB()) > 0;
+                bool isIdle = ride->getLastServoMoveMs() > IDLE_DELAY_MS;
                 uint8_t batteryLimit = (pwrStatus == HIGH) ? PWR_ON_PERCENT : PWR_OFF_PERCENT;
                 bool battEmpty = resolveBatteryStatus(readVBattery()) < batteryLimit;
                 
-                pwrStatus = (!usbPlugged && !battEmpty) ? HIGH : LOW;
+                pwrStatus = (!isIdle && !isUsbPlugged() && !battEmpty) ? HIGH : LOW;
             }
 
             if (pwrStatus == HIGH) {
@@ -100,7 +117,7 @@ class PowerManager {
         }
 
         bool goSleep() {
-            if (!sleepPending) return false;
+            if (!isSleepPending()) return false;
 
             ride->hibernate();
             delay(20);

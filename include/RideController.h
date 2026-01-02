@@ -55,11 +55,12 @@ class RideController {
         bool curveBoostEnabled    = false;
         bool servoActive          = false;
 
-        uint32_t strictServoTimeout = 0;
-        float strictServoAngle    = SERVO::NEUTRAL_DEG;
-        float currentServoAngle   = SERVO::NEUTRAL_DEG;
-        float lastServoWrittenAngle = SERVO::NEUTRAL_DEG;
-        uint32_t lastServoWriteMs   = 0;
+        float strictServoAngle             = SERVO::NEUTRAL_DEG;
+        uint32_t strictServoTimeout        = 0;
+        float currentServoAngle            = SERVO::NEUTRAL_DEG;
+        uint32_t lastServoMoveTimestamp    = 0;
+        float lastServoWrittenAngle        = SERVO::NEUTRAL_DEG;
+        uint32_t lastServoWrittenTimestamp = 0;
 
         uint32_t stateTimerStart  = 0;
         uint32_t currentTimestamp = 0;
@@ -69,14 +70,17 @@ class RideController {
         bool writeServoAngle(float target, float multiplier = 1.0f) {
             const float step = (SERVO::MAX_SPEED_DPS * multiplier) / 1000 * SYSTEM_CLK_MS;
             const float delta  = clampf(target - currentServoAngle, -step, +step);
-            const float next   = clampf(currentServoAngle + delta, minAngle(), maxAngle());
-            currentServoAngle = next;
 
-            if (servoActive && currentTimestamp - lastServoWriteMs >= SERVO_CLK_MS) {
-                lastServoWriteMs = currentTimestamp;
+            if (fabsf(delta) > 0.0f) {
+                const float next   = clampf(currentServoAngle + delta, minAngle(), maxAngle());
+                currentServoAngle = next;
+                lastServoMoveTimestamp = currentTimestamp;
+            }
 
+            if (servoActive && currentTimestamp - lastServoWrittenTimestamp >= SERVO_CLK_MS) {
                 if (fabsf(currentServoAngle - lastServoWrittenAngle) > SERVO::WRITE_DEADBAND_DEG) {
                     servo->write(currentServoAngle);
+                    lastServoWrittenTimestamp = currentTimestamp;
                     lastServoWrittenAngle = currentServoAngle;
 
                     return true;
@@ -160,28 +164,28 @@ class RideController {
                     delay(SERVO_CLK_MS);
                     servo->attach(SERVO::PIN, SERVO::PWM_MIN, SERVO::PWM_MAX);
                     lastServoWrittenAngle = servo->read();
-                    logger->printf("Servo attached. PIN:%d\n", SERVO::PIN);
                 } else {
                     delay(SERVO_CLK_MS);
                     servo->release();
                     servo->detach();
                     pinMode(SERVO::PIN, INPUT_PULLDOWN);
-                    logger->println(F("Servo detached."));
                 }
 
                 servoActive = _powerEnabled;
             }
         }
 
-        void init(bool powerEnabled) {
+        void initTimeCycle() {
             currentTimestamp = millis();
             uint32_t elapsed = fabs(currentTimestamp - lastTimestamp);
             if (elapsed < SYSTEM_CLK_MS) {
                 delay((uint32_t)(SYSTEM_CLK_MS - elapsed));
             }
             lastTimestamp = currentTimestamp;
+        }
 
-            setServoActive(powerEnabled);
+        uint32_t getLastServoMoveMs() {
+            return fabs(currentTimestamp - lastServoMoveTimestamp);
         }
 
         void hibernate() {
