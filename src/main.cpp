@@ -13,7 +13,7 @@
 #define VUSB_PIN D0
 #define VBAT_PIN D1
 #define PWR_PIN D8
-#define BT_NAME "Dynamic BeamAssist #1"
+#define BT_NAME "Dynamic BeamAssist"
 
 Servo g_servo;
 MotionSensor sensor = MotionSensor(12345);
@@ -24,7 +24,6 @@ Button button = Button(BUTTON_PIN, LOW);
 RideController ride = RideController(&sensor, &g_servo, &logger);
 PowerManager power = PowerManager(VBAT_PIN, VUSB_PIN, PWR_PIN, &button, &ride);
 ConfigBlob config;
-bool sleepPending = false;
 
 static CalibBlob mapMotionDataToCalibBlob(MotionData motionData) {
   return CalibBlob(
@@ -36,23 +35,18 @@ static CalibBlob mapMotionDataToCalibBlob(MotionData motionData) {
 void handleSleepOnShortPress() {
   if (!button.isShortPressed()) return;
 
+  while (digitalRead(button.getPin()) == LOW) delay(5);
+  delay(30);
   power.setSleepPending();
 }
 
 void switchBluetoothOnLongPress() {
   if (!button.isLongPressed()) return;
 
-    bool btEnabled = config.bluetooth;
-    if (btEnabled) {
-      logger.stop();
-      config.bluetooth = false;
-    }
-    else {
-      logger.begin(BT_NAME);
-      config.bluetooth = true;
-    }
-
-    eeprom.save(config);    
+  config.bluetooth = !config.bluetooth;
+  eeprom.save(config);
+  delay(50);
+  esp_restart();
 }
 
 bool handleSerialCMD(String input) {

@@ -12,7 +12,7 @@ class Button {
         static constexpr int LONG_PRESS_TIME = 2000;
         static constexpr int DEBOUNCE_TIME = 50;
 
-        ButtonEvent event;
+        ButtonEvent event = BUTTON_NONE;
 
         uint8_t pin;
         uint8_t activeState;
@@ -42,19 +42,18 @@ class Button {
             unsigned long now = millis();
             bool raw = digitalRead(pin);
             bool state = getDebouncedState(raw, now);
-            ButtonEvent event = BUTTON_NONE;
 
             if (state == activeState) {
                 if (pressStart == 0) {
                     pressStart = now;
                     longPressHandled = false;
                 } else if (!longPressHandled && (now - pressStart >= LONG_PRESS_TIME)) {
-                    this->event = BUTTON_LONG;
+                    event = BUTTON_LONG;
                     longPressHandled = true;
                 }
             } else {
                 if (pressStart != 0 && (now - pressStart < LONG_PRESS_TIME)) {
-                    this->event = BUTTON_SHORT;
+                    event = BUTTON_SHORT;
                 }
                 pressStart = 0;
             }
@@ -69,12 +68,7 @@ class Button {
         }
 
         bool isShortPressed () {
-            if (event != BUTTON_SHORT) return false;
-
-            while (digitalRead(getPin()) == LOW) delay(5);
-            delay(30);
-
-            return true;
+            return (event == BUTTON_SHORT);
         }
 
         bool isLongPressed() {

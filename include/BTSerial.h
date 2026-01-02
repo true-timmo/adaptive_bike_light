@@ -16,6 +16,11 @@ public:
     bool begin(const char* deviceName, uint16_t mtu = 185) {
         if (_active) return false;
 
+        uint8_t mac[6];
+        esp_read_mac(mac, ESP_MAC_BT);
+        static char deviceTag[32]; 
+        snprintf(deviceTag, sizeof(deviceTag),
+           "%s-%02X%02X%02X", deviceName, mac[3], mac[4], mac[5]);        
         NimBLEDevice::init(deviceName);
         NimBLEDevice::setMTU(mtu);
         NimBLEDevice::setPower(ESP_PWR_LVL_P9);
