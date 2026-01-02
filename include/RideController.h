@@ -71,7 +71,7 @@ class RideController {
             const float step = (SERVO::MAX_SPEED_DPS * multiplier) / 1000 * SYSTEM_CLK_MS;
             const float delta  = clampf(target - currentServoAngle, -step, +step);
 
-            if (fabsf(delta) > 0.0f) {
+            if (fabsf(delta) > step/2) {
                 const float next   = clampf(currentServoAngle + delta, minAngle(), maxAngle());
                 currentServoAngle = next;
                 lastServoMoveTimestamp = currentTimestamp;

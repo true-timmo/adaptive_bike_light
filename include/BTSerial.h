@@ -21,7 +21,7 @@ public:
         static char deviceTag[32]; 
         snprintf(deviceTag, sizeof(deviceTag),
            "%s-%02X%02X%02X", deviceName, mac[3], mac[4], mac[5]);        
-        NimBLEDevice::init(deviceName);
+        NimBLEDevice::init(deviceTag);
         NimBLEDevice::setMTU(mtu);
         NimBLEDevice::setPower(ESP_PWR_LVL_P9);
 
@@ -40,7 +40,7 @@ public:
         auto adv = NimBLEDevice::getAdvertising();
 
         NimBLEAdvertisementData advData;
-        advData.setName(deviceName);
+        advData.setName(deviceTag);
         advData.setFlags(ESP_BLE_ADV_FLAG_GEN_DISC | ESP_BLE_ADV_FLAG_BREDR_NOT_SPT);
         advData.setCompleteServices(NimBLEUUID(NUS_SERVICE_UUID));
 
