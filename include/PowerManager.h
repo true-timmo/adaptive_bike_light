@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include <math.h>
 #include "Button.h"
 #include "RideController.h"
 #include "esp_sleep.h"
@@ -7,35 +8,38 @@
 class PowerManager {
     private:
         static constexpr float VOLTAGE_DIVIDER = 1.805;
-        static constexpr uint8_t PWR_OFF_PERCENT = 0;
+        static constexpr uint8_t PWR_OFF_PERCENT = 5;
         static constexpr uint8_t PWR_ON_PERCENT = 20;
         static constexpr uint32_t IDLE_DELAY_MS = 1000;
         static constexpr uint32_t SLEEP_DELAY_MS = 600000;
 
         
-        static inline constexpr float VOLTS[]  = {4.20, 4.10, 4.00, 3.90, 3.80, 3.75, 3.70, 3.65, 3.60, 3.50, 3.30};
-        static inline constexpr float PERCENT[] = {100,  90,   80,   70,   60,   50,   40,   30,   20,   10,    0 };
+        static inline constexpr float VOLTS[]  = {4.15, 4.05, 3.95, 3.85, 3.75, 3.65, 3.55, 3.45, 3.35, 3.30};
+        static inline constexpr float PERCENT[] = {100,   90,   80,   65,   50,   35,   20,   10,    5,    0};
 
         uint8_t battPin;
         uint8_t vusbPin;
         uint8_t pwrPin;
         uint8_t btnPin;
 
+        float vBattRaw = NAN;
+        float vUsbRaw = NAN;
+        
         Button* button;
         RideController* ride;
         bool sleepPending = false;
         bool pwrEnabled = true;
         int pwrStatus = HIGH;
 
-        float rawToV(int raw) {
+        float rawToV(float raw) {
             return raw * (3.3 / 4095.0) * VOLTAGE_DIVIDER;
         }
 
         uint8_t resolveBatteryStatus(float v_batt) {
             if (v_batt >= VOLTS[0]) return 100;
-            if (v_batt <= VOLTS[10]) return 0;
+            if (v_batt <= VOLTS[9]) return 0;
 
-            for (int i = 0; i < 10; i++) {
+            for (int i = 0; i < 9; i++) {
                 if (v_batt >= VOLTS[i+1]) {
                     float v1 = VOLTS[i];
                     float v2 = VOLTS[i+1];
@@ -72,7 +76,12 @@ class PowerManager {
             };
 
         float readVBattery() {
-            return rawToV(analogRead(battPin));
+            int raw = analogRead(battPin);
+            vBattRaw = (!isfinite(vBattRaw)) 
+                ? raw 
+                : vBattRaw * 0.85f + raw * 0.15f;
+
+            return rawToV(vBattRaw);
         }
 
         uint8_t readBatteryPercent() {
@@ -80,7 +89,12 @@ class PowerManager {
         }
 
         float readVUSB() {
-            return rawToV(analogRead(vusbPin));
+            int raw = analogRead(vusbPin);
+             vUsbRaw = (!isfinite(vUsbRaw)) 
+                ? raw 
+                : vUsbRaw * 0.85f + raw * 0.15f;
+
+            return rawToV(vUsbRaw);
         }
 
         bool isPowerEnabled() {
