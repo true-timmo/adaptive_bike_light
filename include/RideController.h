@@ -67,9 +67,10 @@ class RideController {
         uint32_t lastTimestamp    = 0;
         uint32_t shockHoldUntil   = 0;
 
-        bool writeServoAngle(float target, float multiplier = 1.0f) {
-            const float step = (SERVO::MAX_SPEED_DPS * multiplier) / 1000 * SYSTEM_CLK_MS;
-            const float delta  = clampf(target - currentServoAngle, -step, +step);
+        bool writeServoAngle(float target, float boost = 1.0f) {
+            const float step = SERVO::MAX_SPEED_DPS / 1000 * SYSTEM_CLK_MS;
+            const float boostedStep = step * boost;
+            const float delta  = clampf(target - currentServoAngle, -boostedStep, +boostedStep);
 
             if (fabsf(delta) > step/2) {
                 const float next   = clampf(currentServoAngle + delta, minAngle(), maxAngle());
@@ -185,7 +186,7 @@ class RideController {
         }
 
         uint32_t getLastServoMoveMs() {
-            return fabs(currentTimestamp - lastServoMoveTimestamp);
+            return (uint32_t)(currentTimestamp - lastServoMoveTimestamp);
         }
 
         void hibernate() {
