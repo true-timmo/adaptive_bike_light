@@ -139,6 +139,7 @@ void setup() {
     power.enablePower(config.servo);
     ride.setLoggingState(config.logging);
     ride.setGearOffset(config.gearOffset);
+    ride.turnNeutral();
 
     logger.println("Dynamic Beam Assist ready!");
   } else {
@@ -155,7 +156,7 @@ void loop() {
   button.checkEvent();
   switchBluetoothOnLongPress();
   handleSleepOnShortPress();
-
+  
   ride.initTimeCycle();
   ride.setServoActive(power.isPowerEnabled());
   if (ride.handleStrictServoAngle() == true) {

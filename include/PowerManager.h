@@ -127,7 +127,6 @@ class PowerManager {
     
         void setSleepPending() {
             sleepPending = true;
-            ride->turnNeutral();
         }
 
         bool goSleep() {
