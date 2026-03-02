@@ -41,6 +41,12 @@ class RideController {
         static constexpr float LPF_TAU_S = 0.12f;
         static constexpr float CURVE_BOOST_FACTOR = 0.5f;
 
+        // Shock suppression & turbulence
+        static constexpr uint32_t SHOCK_HOLD_MS         = 150;   // ms Servo-Pause nach Shock
+        static constexpr float    TURBULENCE_ALPHA_RISE  = 0.03f; // schneller Anstieg (~167ms)
+        static constexpr float    TURBULENCE_ALPHA_FALL  = 0.01f; // langsamer Abfall (~500ms)
+        static constexpr float    TURBULENCE_MAX_DEG     = 2.0f;  // ab dieser Jitter-Stärke: Neutral
+
         Stream *logger;
         MotionSensor *sensor;
         Servo *servo;
@@ -66,6 +72,7 @@ class RideController {
         uint32_t currentTimestamp = 0;
         uint32_t lastTimestamp    = 0;
         uint32_t shockHoldUntil   = 0;
+        float    turbulenceLevel  = 0.0f;
 
         bool writeServoAngle(float target, float boost = 1.0f) {
             const float step = SERVO::MAX_SPEED_DPS / 1000 * SYSTEM_CLK_MS;
@@ -240,7 +247,17 @@ class RideController {
             if (!motionData.valid) return;
             
             FilteredData filteredData = filter.handle(motionData);
-            if (filteredData.isShock) return;
+
+            // Turbulenz messen: Differenz zwischen Roh-Signal und geglättetem Wert
+            float rawJitter  = filteredData.isShock ? TURBULENCE_MAX_DEG : fabsf(filteredData.accelRollDeg - rollDegFiltered);
+            float turbAlpha  = (rawJitter > turbulenceLevel) ? TURBULENCE_ALPHA_RISE : TURBULENCE_ALPHA_FALL;
+            turbulenceLevel += turbAlpha * (rawJitter - turbulenceLevel);
+
+            if (filteredData.isShock) {
+                shockHoldUntil = currentTimestamp + SHOCK_HOLD_MS;
+                return;
+            }
+            if ((int32_t)(shockHoldUntil - currentTimestamp) > 0) return;
 
             // Adaptive Glättung: je kleiner Yaw, desto stärkeres LPF (Gerade ruhiger) ---
             float yawMag   = fabsf(filteredData.gyroYaw);
@@ -307,7 +324,10 @@ class RideController {
 
             if (state == RideState::STRAIGHT) {
                 targetDeg = neutralAngle();
-            } else {             
+            } else {
+                // Bei Unruhe Servo zur Neutralposition ziehen (calmFactor 0=Neutral, 1=voll reaktiv)
+                float calmFactor = 1.0f - clampf(turbulenceLevel / TURBULENCE_MAX_DEG, 0.0f, 1.0f);
+                targetDeg = neutralAngle() + (targetDeg - neutralAngle()) * calmFactor;
                 targetDeg = clampf(targetDeg, minAngle(), maxAngle());
             }
 

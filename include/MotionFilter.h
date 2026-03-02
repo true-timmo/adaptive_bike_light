@@ -22,8 +22,9 @@ class MotionFilter {
 
         static constexpr float SHOCK_CAP_ROLL  = 36.6f;
         static constexpr float SHOCK_CAP_YAW   = 42.9f;
-        static constexpr float SHOCK_DIFF_ROLL  = 7.6f;
-        static constexpr float SHOCK_DIFF_YAW   = 5.3f;
+        static constexpr float SHOCK_DIFF_ROLL      = 7.6f;
+        static constexpr float SHOCK_DIFF_YAW       = 5.3f;
+        static constexpr float SHOCK_DIFF_GYRO_ROLL = 8.0f;
 
         Stream* logger;
 
@@ -63,7 +64,7 @@ class MotionFilter {
         void handleShock(FilteredData *filteredData) {
             bool shockByCap = abs(filteredData->gyroYaw) > SHOCK_CAP_YAW || abs(filteredData->gyroRoll) > SHOCK_CAP_ROLL;
 
-            if (shockByCap || absAccelRollDiff > SHOCK_DIFF_ROLL || absGyroYawDiff > SHOCK_DIFF_YAW) {
+            if (shockByCap || absAccelRollDiff > SHOCK_DIFF_ROLL || absGyroYawDiff > SHOCK_DIFF_YAW || absGyroRollDiff > SHOCK_DIFF_GYRO_ROLL) {
                 filteredData->isShock = true;
             }
         };
@@ -86,9 +87,11 @@ class MotionFilter {
             handleShock(&filteredData);
             handleNoise(&filteredData);
 
-            lastGyroRoll = filteredData.gyroRoll;
-            lastGyroYaw = filteredData.gyroYaw;
-            lastAccelRollDeg = filteredData.accelRollDeg;
+            if (!filteredData.isShock) {
+                lastGyroRoll = filteredData.gyroRoll;
+                lastGyroYaw = filteredData.gyroYaw;
+                lastAccelRollDeg = filteredData.accelRollDeg;
+            }
 
             return filteredData;
         };
