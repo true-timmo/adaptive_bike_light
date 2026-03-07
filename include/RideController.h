@@ -41,11 +41,9 @@ class RideController {
         static constexpr float LPF_TAU_S = 0.12f;
         static constexpr float CURVE_BOOST_FACTOR = 0.5f;
 
-        // Shock suppression & turbulence
-        static constexpr uint32_t SHOCK_HOLD_MS         = 150;   // ms Servo-Pause nach Shock
         static constexpr float    TURBULENCE_ALPHA_RISE  = 0.03f; // schneller Anstieg (~167ms)
-        static constexpr float    TURBULENCE_ALPHA_FALL  = 0.01f; // langsamer Abfall (~500ms)
-        static constexpr float    TURBULENCE_MAX_DEG     = 2.0f;  // ab dieser Jitter-Stärke: Neutral
+        static constexpr float    TURBULENCE_ALPHA_FALL  = 0.02f; // langsamer Abfall (~500ms)
+        static constexpr float    TURBULENCE_MAX_DEG     = 8.0f;  // ab dieser Jitter-Stärke: Neutral
 
         Stream *logger;
         MotionSensor *sensor;
@@ -253,11 +251,7 @@ class RideController {
             float turbAlpha  = (rawJitter > turbulenceLevel) ? TURBULENCE_ALPHA_RISE : TURBULENCE_ALPHA_FALL;
             turbulenceLevel += turbAlpha * (rawJitter - turbulenceLevel);
 
-            if (filteredData.isShock) {
-                shockHoldUntil = currentTimestamp + SHOCK_HOLD_MS;
-                return;
-            }
-            if ((int32_t)(shockHoldUntil - currentTimestamp) > 0) return;
+            if (filteredData.isShock) {return;}
 
             // Adaptive Glättung: je kleiner Yaw, desto stärkeres LPF (Gerade ruhiger) ---
             float yawMag   = fabsf(filteredData.gyroYaw);

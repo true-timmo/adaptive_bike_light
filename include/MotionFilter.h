@@ -87,11 +87,9 @@ class MotionFilter {
             handleShock(&filteredData);
             handleNoise(&filteredData);
 
-            if (!filteredData.isShock) {
-                lastGyroRoll = filteredData.gyroRoll;
-                lastGyroYaw = filteredData.gyroYaw;
-                lastAccelRollDeg = filteredData.accelRollDeg;
-            }
+            lastGyroRoll = filteredData.gyroRoll;
+            lastGyroYaw = filteredData.gyroYaw;
+            lastAccelRollDeg = filteredData.accelRollDeg;
 
             return filteredData;
         };
