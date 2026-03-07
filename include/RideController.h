@@ -43,7 +43,6 @@ class RideController {
 
         static constexpr float    TURBULENCE_ALPHA_RISE  = 0.03f; // schneller Anstieg (~167ms)
         static constexpr float    TURBULENCE_ALPHA_FALL  = 0.02f; // langsamer Abfall (~500ms)
-        static constexpr float    TURBULENCE_MAX_DEG     = 8.0f;  // ab dieser Jitter-Stärke: Neutral
 
         Stream *logger;
         MotionSensor *sensor;
@@ -58,6 +57,8 @@ class RideController {
         bool loggingEnabled       = false;
         bool curveBoostEnabled    = false;
         bool servoActive          = false;
+        float turbulenceMaxDeg    = 8.0f;
+        float trendTauS           = 2.0f;
 
         float strictServoAngle             = SERVO::NEUTRAL_DEG;
         uint32_t strictServoTimeout        = 0;
@@ -71,6 +72,7 @@ class RideController {
         uint32_t lastTimestamp    = 0;
         uint32_t shockHoldUntil   = 0;
         float    turbulenceLevel  = 0.0f;
+        float    rollDegTrend     = 0.0f;
 
         bool writeServoAngle(float target, float boost = 1.0f) {
             const float step = SERVO::MAX_SPEED_DPS / 1000 * SYSTEM_CLK_MS;
@@ -154,6 +156,14 @@ class RideController {
 
         void setGearRatio(float ratio) {
             gearRatio = ratio;
+        }
+
+        void setJitterMax(float deg) {
+            turbulenceMaxDeg = deg;
+        }
+
+        void setDirectionMemory(float seconds) {
+            trendTauS = seconds;
         }
 
         void setLoggingState(bool _state) {
@@ -247,7 +257,7 @@ class RideController {
             FilteredData filteredData = filter.handle(motionData);
 
             // Turbulenz messen: Differenz zwischen Roh-Signal und geglättetem Wert
-            float rawJitter  = filteredData.isShock ? TURBULENCE_MAX_DEG : fabsf(filteredData.accelRollDeg - rollDegFiltered);
+            float rawJitter  = filteredData.isShock ? turbulenceMaxDeg : fabsf(filteredData.accelRollDeg - rollDegFiltered);
             float turbAlpha  = (rawJitter > turbulenceLevel) ? TURBULENCE_ALPHA_RISE : TURBULENCE_ALPHA_FALL;
             turbulenceLevel += turbAlpha * (rawJitter - turbulenceLevel);
 
@@ -263,10 +273,19 @@ class RideController {
             float alpha = SYSTEM_DT_S / (dynTau + SYSTEM_DT_S);
 
             rollDegFiltered += alpha * (filteredData.accelRollDeg - rollDegFiltered);
+
+            // Richtungsgedächtnis: sehr träge, hält die aktuelle Fahrtrichtung auch bei Unruhe
+            float trendAlpha = SYSTEM_DT_S / (trendTauS + SYSTEM_DT_S);
+            rollDegTrend += trendAlpha * (rollDegFiltered - rollDegTrend);
+
+            // Bei Turbulenz: Trend statt schnellem Signal → Licht bleibt in der aktuellen Richtung
+            float calmFactor = clampf(turbulenceLevel / turbulenceMaxDeg, 0.0f, 1.0f);
+            float effectiveRoll = rollDegFiltered + calmFactor * (rollDegTrend - rollDegFiltered);
+
             float rollFrac = fminf(fabsf(rollDegFiltered) / ROLL_NORM, 1.0f);
             float yawWeight = (1.0f - rollFrac) * yawFrac;
             yawWeight = clampf(yawWeight, 0.0f, 0.5f);
-            float blended = rollDegFiltered + (K_YAW * yawWeight) * filteredData.gyroYaw;
+            float blended = effectiveRoll + (K_YAW * yawWeight) * filteredData.gyroYaw;
             float targetDeg = neutralAngle() + gearRatio * blended * SERVO::GEAR_SIGN;
 
             float multiplier = 1.0f;
@@ -319,9 +338,6 @@ class RideController {
             if (state == RideState::STRAIGHT) {
                 targetDeg = neutralAngle();
             } else {
-                // Bei Unruhe Servo zur Neutralposition ziehen (calmFactor 0=Neutral, 1=voll reaktiv)
-                float calmFactor = 1.0f - clampf(turbulenceLevel / TURBULENCE_MAX_DEG, 0.0f, 1.0f);
-                targetDeg = neutralAngle() + (targetDeg - neutralAngle()) * calmFactor;
                 targetDeg = clampf(targetDeg, minAngle(), maxAngle());
             }
 

@@ -105,12 +105,24 @@ bool handleSerialCMD(String input) {
       ride.setGearRatio(config.gearRatio);
       logger.printf("Mechanical gear ratio set to: %d\n", config.gearRatio);
       break;
+    case CMD::SET_JITTER:
+      config.jitterMax = value.toFloat();
+      eeprom.save(config);
+      ride.setJitterMax(config.jitterMax);
+      logger.printf("Jitter max set to: %.1f°\n", config.jitterMax);
+      break;
+    case CMD::SET_MEMORY:
+      config.directionMemory = value.toFloat();
+      eeprom.save(config);
+      ride.setDirectionMemory(config.directionMemory);
+      logger.printf("Direction memory set to: %.1fs\n", config.directionMemory);
+      break;
     case CMD::DUMP_CFG:
       eeprom.dump(config);
       break;
     default:
       logger.println(F("COMMANDS:"));
-      logger.println(F("  l=left, r=right, n=neutral\n  c=calibrate, b=toggle boost\n  log=toggle logs, cfg=dump config\n  so=set offset, sr=set ratio\n  v=battery voltage"));
+      logger.println(F("  l=left, r=right, n=neutral\n  c=calibrate, b=toggle boost\n  log=toggle logs, cfg=dump config\n  so=set offset, sr=set ratio\n  jit=jitter max (°), mem=direction memory (s)\n  v=battery voltage"));
       break;
   }
 
@@ -139,6 +151,8 @@ void setup() {
     power.enablePower(config.servo);
     ride.setLoggingState(config.logging);
     ride.setGearOffset(config.gearOffset);
+    ride.setJitterMax(config.jitterMax);
+    ride.setDirectionMemory(config.directionMemory);
     ride.turnNeutral();
 
     logger.println("Dynamic Beam Assist ready!");

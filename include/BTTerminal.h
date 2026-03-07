@@ -13,6 +13,8 @@ enum class CMD {
   TOGGLE_BOOST,
   SET_OFFSET,
   SET_RATIO,
+  SET_JITTER, // ab dieser Jitter-Stärke: voller Trend (via "jit")
+  SET_MEMORY, // Zeitkonstante Richtungsgedächtnis in Sekunden (via "mem")
   BATTERY
 };
 
@@ -31,6 +33,8 @@ public:
         if (cmd == F("cfg")) return CMD::DUMP_CFG;
         if (cmd == F("so")) return CMD::SET_OFFSET;
         if (cmd == F("sr")) return CMD::SET_RATIO;
+        if (cmd == F("jit")) return CMD::SET_JITTER;
+        if (cmd == F("mem")) return CMD::SET_MEMORY;
         if (cmd == F("v")) return CMD::BATTERY;
 
         return CMD::HELP;

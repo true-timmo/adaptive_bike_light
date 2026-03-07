@@ -15,23 +15,25 @@ struct CalibBlob {
 };
 
 struct ConfigBlob {
-    uint32_t   deviceID = 0xC0FFEE42;
-    uint8_t    version = 3;
-    CalibBlob  calibData = CalibBlob();
-    bool       logging = false;
-    bool       bluetooth = true;
-    bool       servo = false;
-    int8_t     gearOffset = 0;
-    float      gearRatio = 5.5f;
-    bool       curveBoost = false;
-    uint16_t   crc = 0;
+    uint32_t   deviceID        = 0xC0FFEE42;
+    uint8_t    version         = 4;
+    CalibBlob  calibData       = CalibBlob();
+    bool       logging         = false;
+    bool       bluetooth       = true;
+    bool       servo           = false;
+    int8_t     gearOffset      = 0;
+    float      gearRatio       = 5.5f;
+    bool       curveBoost      = false;
+    float      jitterMax       = 8.0f;
+    float      directionMemory = 2.0f;
+    uint16_t   crc             = 0;
 };
 
 class ConfigurationStorage {
     private:
         static constexpr int EEPROM_ADDR = 0;
         static constexpr uint32_t DEVICE_ID = 0xC0FFEE42;
-        static constexpr uint8_t BLOB_VERSION = 3;
+        static constexpr uint8_t BLOB_VERSION = 4;
 
         Stream *logger;
         bool initialized = false;
@@ -64,6 +66,7 @@ class ConfigurationStorage {
                 blob.calibData.yawBias, blob.calibData.rollBias, 
                 blob.calibData.xOffset, blob.calibData.yOffset, blob.calibData.zOffset);
             logger->printf("logging: %d | servo: %d | curveBoost: %d\n", (int)blob.logging, (int)blob.servo, (int)blob.curveBoost);
+            logger->printf("jitterMax: %.1f° | directionMemory: %.1fs\n", blob.jitterMax, blob.directionMemory);
         }
 
         ConfigBlob load() {
